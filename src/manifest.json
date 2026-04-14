@@ -1,0 +1,16 @@
+{
+  "manifest_version": 1,
+  "id": "com.riskyworks.joplin-notion-editor",
+  "app_min_version": "1.6",
+  "version": "0.1.0",
+  "name": "Notion Block Editor",
+  "description": "Notion-like block editor for Joplin with drag-and-drop blocks, slash commands, and AI integration.",
+  "author": "riskyworks",
+  "homepage_url": "",
+  "repository_url": "",
+  "keywords": ["editor", "notion", "blocks", "ai"],
+  "categories": ["editor"],
+  "screenshots": [],
+  "icons": {},
+  "promo_tile": {}
+}

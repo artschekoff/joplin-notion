@@ -1,0 +1,4 @@
+# Editor.js UMD bundles go here (downloaded in Phase 1)
+# editorjs.umd.js, header.umd.js, list.umd.js, checklist.umd.js,
+# code.umd.js, quote.umd.js, table.umd.js, delimiter.umd.js,
+# drag-drop.umd.js, undo.umd.js

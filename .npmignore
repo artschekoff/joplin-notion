@@ -1,0 +1,5 @@
+api/
+src/
+dist/
+node_modules/
+*.jpl
