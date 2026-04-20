@@ -20,8 +20,7 @@ joplin.plugins.register({
 				type: SettingItemType.String,
 				public: true,
 				label: 'Notion Block Editor: Ask AI request',
-				description:
-					'JSON {text, ts} written when user triggers Ask AI from the block editor.',
+				description: 'JSON {text, ts} written when user triggers Ask AI from the block editor.',
 			},
 		});
 
@@ -89,8 +88,7 @@ joplin.plugins.register({
 				try {
 					await shareCurrentNote('doc');
 				} catch (err) {
-					const msg =
-						err instanceof Error ? err.message : 'Failed to export note as DOCX.';
+					const msg = err instanceof Error ? err.message : 'Failed to export note as DOCX.';
 					await joplin.views.dialogs.showMessageBox(msg);
 				}
 			},
