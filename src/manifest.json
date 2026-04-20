@@ -1,6 +1,6 @@
 {
   "manifest_version": 1,
-  "id": "com.riskyworks.joplin-notion-editor",
+  "id": "net.roxl.joplin-notion",
   "app_min_version": "1.6",
   "version": "0.1.0",
   "name": "Notion Block Editor",
