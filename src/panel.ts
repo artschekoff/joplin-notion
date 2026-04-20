@@ -1,53 +1,134 @@
 import joplin from 'api';
 
-const PANEL_HTML = `
-<!DOCTYPE html>
+let panelHandle: string | null = null;
+let panelVisible = false;
+
+const PANEL_HTML = `<!DOCTYPE html>
 <html>
-<head>
-  <meta charset="UTF-8" />
-  <link rel="stylesheet" href="./webview/panel.css" />
-</head>
+<head><meta charset="utf-8"></head>
 <body>
-  <div id="app">
-    <div id="editor-pane">
-      <div id="editor-container"></div>
-    </div>
-    <div id="resizer"></div>
-    <div id="chat-pane">
-      <div id="messages"></div>
-      <div id="input-area">
-        <textarea id="prompt-input" placeholder="Ask AI..."></textarea>
-        <button id="send-btn">Send</button>
-      </div>
-    </div>
-  </div>
-  <script src="./webview/block-editor.js"></script>
-  <script src="./webview/panel.js"></script>
+	<div id="app">
+		<div id="editor-wrapper">
+			<div id="editor-container" tabindex="-1"></div>
+			<div id="toc-panel" class="toc-hidden">
+				<div id="toc-header">
+					<span>Outline</span>
+				</div>
+				<div id="toc-list"></div>
+			</div>
+		</div>
+		<div id="vim-statusbar" data-mode="insert">
+			<span id="vim-mode-label">INSERT</span>
+		</div>
+	</div>
+	<button id="toc-toggle-btn" title="Toggle outline" aria-label="Toggle outline">
+		<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+			<line x1="3" y1="6" x2="21" y2="6"/>
+			<line x1="3" y1="12" x2="15" y2="12"/>
+			<line x1="3" y1="18" x2="18" y2="18"/>
+		</svg>
+	</button>
 </body>
-</html>
-`;
+</html>`;
+
+const getCurrentNote = async (): Promise<{ id: string; title: string; body: string } | null> => {
+	const note = await joplin.workspace.selectedNote();
+	if (!note) return null;
+	const full = await joplin.data.get(['notes', note.id], { fields: ['id', 'title', 'body'] });
+	return full ?? null;
+};
+
+const sendNoteLoaded = async () => {
+	if (!panelHandle) return;
+	const note = await getCurrentNote();
+	if (!note) return;
+	await joplin.views.panels.postMessage(panelHandle, {
+		type: 'noteLoaded',
+		note: { id: note.id, title: note.title, body: note.body },
+	});
+};
 
 export const initPanel = async (): Promise<void> => {
-	const panel = await joplin.views.panels.create('notionEditorPanel');
-	await joplin.views.panels.setHtml(panel, PANEL_HTML);
-	await joplin.views.panels.addScript(panel, './webview/panel.css');
-	await joplin.views.panels.addScript(panel, './webview/block-editor.js');
-	await joplin.views.panels.addScript(panel, './webview/panel.js');
+	panelVisible = false;
 
-	await joplin.views.panels.onMessage(panel, async (message: { type: string; payload?: unknown }) => {
-		if (message.type === 'saveBlocks') {
-			// TODO: Phase 1 — convert blocks to Markdown and save via joplin.data.put
-		}
+	panelHandle = await joplin.views.panels.create('notionBlockEditorPanel');
+	await joplin.views.panels.setHtml(panelHandle, PANEL_HTML);
+	await joplin.views.panels.addScript(panelHandle, './webview/panel.css');
+	await joplin.views.panels.addScript(panelHandle, './webview/vendor/editorjs.umd.js');
+	await joplin.views.panels.addScript(panelHandle, './webview/vendor/header.umd.js');
+	await joplin.views.panels.addScript(panelHandle, './webview/vendor/editorjs-list.umd.js');
+	await joplin.views.panels.addScript(panelHandle, './webview/vendor/checklist.umd.js');
+	await joplin.views.panels.addScript(panelHandle, './webview/vendor/code.umd.js');
+	await joplin.views.panels.addScript(panelHandle, './webview/vendor/quote.umd.js');
+	await joplin.views.panels.addScript(panelHandle, './webview/vendor/delimiter.umd.js');
+	await joplin.views.panels.addScript(panelHandle, './webview/vendor/editorjs-drag-drop.js');
+	await joplin.views.panels.addScript(panelHandle, './webview/markdown-converter.js');
+	await joplin.views.panels.addScript(panelHandle, './webview/block-editor.js');
+	await joplin.views.panels.hide(panelHandle);
+
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	await joplin.views.panels.onMessage(panelHandle, async (message: any) => {
+		if (!panelHandle) return;
+
 		if (message.type === 'getNote') {
-			const note = await joplin.workspace.selectedNote();
-			return note ?? null;
+			await sendNoteLoaded();
+			return;
+		}
+
+		if (message.type === 'saveBlocks') {
+			const { noteId, markdown } = message as { noteId: unknown; markdown: unknown };
+			if (typeof noteId === 'string' && noteId && typeof markdown === 'string') {
+				try {
+					await joplin.data.put(['notes', noteId], null, { body: markdown });
+				} catch (saveErr) {
+					const errMsg = saveErr instanceof Error ? saveErr.message : String(saveErr);
+					console.error('saveBlocks failed:', errMsg);
+					if (panelHandle) {
+						await joplin.views.panels.postMessage(panelHandle, {
+							type: 'error',
+							message: 'Failed to save note. Please try again.',
+						});
+					}
+				}
+			}
+			return;
+		}
+
+		if (message.type === 'askAI') {
+			const text = typeof message.text === 'string' ? message.text : '';
+			try {
+				await joplin.settings.setValue(
+					'notion.askAI.request',
+					JSON.stringify({ text, ts: Date.now() }),
+				);
+			} catch (err) {
+				console.error('askAI bridge write failed:', err);
+			}
+			return;
 		}
 	});
 
 	await joplin.workspace.onNoteSelectionChange(async () => {
-		const note = await joplin.workspace.selectedNote();
-		if (note) {
-			await joplin.views.panels.postMessage(panel, { type: 'loadNote', note });
+		if (panelHandle && panelVisible) {
+			await sendNoteLoaded();
 		}
 	});
 };
+
+export const toggleBlockEditorPane = async (): Promise<void> => {
+	if (!panelHandle) return;
+	panelVisible = !panelVisible;
+	if (panelVisible) {
+		await joplin.views.panels.show(panelHandle);
+		await sendNoteLoaded();
+	} else {
+		await joplin.views.panels.hide(panelHandle);
+	}
+	try {
+		await joplin.settings.setValue('notion.blockEditor.active', panelVisible);
+	} catch (err) {
+		console.error('blockEditor.active write failed:', err);
+	}
+};
+
+export const getBlockEditorEnabled = (): boolean => panelVisible;
