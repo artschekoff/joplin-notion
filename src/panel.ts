@@ -2,12 +2,14 @@ import joplin from 'api';
 
 let panelHandle: string | null = null;
 let panelVisible = false;
+let isSavingFromPanel = false;
 
 const PANEL_HTML = `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"></head>
 <body>
 	<div id="app">
+		<input id="note-title" type="text" placeholder="Untitled" spellcheck="true" />
 		<div id="editor-wrapper">
 			<div id="editor-container" tabindex="-1"></div>
 			<div id="toc-panel" class="toc-hidden">
@@ -78,6 +80,7 @@ export const initPanel = async (): Promise<void> => {
 		if (message.type === 'saveBlocks') {
 			const { noteId, markdown } = message as { noteId: unknown; markdown: unknown };
 			if (typeof noteId === 'string' && noteId && typeof markdown === 'string') {
+				isSavingFromPanel = true;
 				try {
 					await joplin.data.put(['notes', noteId], null, { body: markdown });
 				} catch (saveErr) {
@@ -89,6 +92,23 @@ export const initPanel = async (): Promise<void> => {
 							message: 'Failed to save note. Please try again.',
 						});
 					}
+				} finally {
+					setTimeout(() => {
+						isSavingFromPanel = false;
+					}, 2000);
+				}
+			}
+			return;
+		}
+
+		if (message.type === 'saveTitle') {
+			const { noteId, title } = message as { noteId: unknown; title: unknown };
+			if (typeof noteId === 'string' && noteId && typeof title === 'string') {
+				try {
+					await joplin.data.put(['notes', noteId], null, { title });
+				} catch (saveErr) {
+					const errMsg = saveErr instanceof Error ? saveErr.message : String(saveErr);
+					console.error('saveTitle failed:', errMsg);
 				}
 			}
 			return;
@@ -110,6 +130,12 @@ export const initPanel = async (): Promise<void> => {
 
 	await joplin.workspace.onNoteSelectionChange(async () => {
 		if (panelHandle && panelVisible) {
+			await sendNoteLoaded();
+		}
+	});
+
+	await joplin.workspace.onNoteChange(async () => {
+		if (panelHandle && panelVisible && !isSavingFromPanel) {
 			await sendNoteLoaded();
 		}
 	});

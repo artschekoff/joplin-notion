@@ -18,6 +18,8 @@
   let currentNoteId = null;
   let saveTimer = null;
   const SAVE_DEBOUNCE_MS = 1200;
+  let titleSaveTimer = null;
+  const TITLE_SAVE_DEBOUNCE_MS = 800;
 
   // ── Vim state ──────────────────────────────────────────────────────────────
 
@@ -62,6 +64,38 @@
         window.webviewApi.postMessage({ type: 'saveBlocks', noteId: currentNoteId, markdown: md });
       } catch (_) {}
     }, SAVE_DEBOUNCE_MS);
+  };
+
+  // ── Title save helper ──────────────────────────────────────────────────────
+
+  const scheduleTitleSave = () => {
+    clearTimeout(titleSaveTimer);
+    titleSaveTimer = setTimeout(() => {
+      if (!currentNoteId) return;
+      const titleEl = document.getElementById('note-title');
+      if (!titleEl) return;
+      window.webviewApi.postMessage({
+        type: 'saveTitle',
+        noteId: currentNoteId,
+        title: titleEl.value,
+      });
+    }, TITLE_SAVE_DEBOUNCE_MS);
+  };
+
+  const attachTitleListeners = () => {
+    const titleEl = document.getElementById('note-title');
+    if (!titleEl) return;
+    titleEl.addEventListener('input', scheduleTitleSave);
+    titleEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const container = document.getElementById('editor-container');
+        if (container) container.focus();
+        if (editor) {
+          try { editor.caret.setToBlock(0, 'start'); } catch (_) {}
+        }
+      }
+    });
   };
 
   // ── Undo helpers ───────────────────────────────────────────────────────────
@@ -357,8 +391,12 @@
   window.BlockEditor = {
     loadNote: async (note) => {
       clearTimeout(saveTimer);
+      clearTimeout(titleSaveTimer);
       saveTimer = null;
+      titleSaveTimer = null;
       currentNoteId = note ? (note.id || null) : null;
+      const titleEl = document.getElementById('note-title');
+      if (titleEl) titleEl.value = (note && note.title) ? note.title : '';
       if (!editor) return;
       undoStack.length = 0;
       currentSnapshot = null;
@@ -960,6 +998,7 @@
 
   const boot = () => {
     initTOC();
+    attachTitleListeners();
     attachPopoverBehavior();
     attachMessageHandler();
     patchListContentEditable();
