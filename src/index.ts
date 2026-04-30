@@ -44,12 +44,6 @@ joplin.plugins.register({
 			{ accelerator: 'CmdOrCtrl+Shift+B' },
 		);
 
-		await joplin.views.toolbarButtons.create(
-			'notionBlockEditorBtn',
-			'notionToggleBlockEditor',
-			ToolbarButtonLocation.NoteToolbar,
-		);
-
 		// ── Export commands ──────────────────────────────────────────────────────
 
 		await joplin.commands.register({
@@ -108,52 +102,18 @@ joplin.plugins.register({
 			},
 		});
 
-		await joplin.views.menuItems.create(
-			'notionShareNoteAsTextMenuItem',
-			'notionShareNoteAsText',
+		// ── Export submenu under Tools ───────────────────────────────────────────
+
+		await joplin.views.menus.create(
+			'notionExportMenu',
+			'Export',
+			[
+				{ commandName: 'notionExportNoteAsDoc' },
+				{ commandName: 'notionExportNoteAsRtf' },
+				{ commandName: 'notionShareNoteAsPdf' },
+				{ commandName: 'notionShareNoteAsText' },
+			],
 			MenuItemLocation.Tools,
-		);
-
-		await joplin.views.menuItems.create(
-			'notionShareNoteAsPdfMenuItem',
-			'notionShareNoteAsPdf',
-			MenuItemLocation.Tools,
-		);
-
-		await joplin.views.menuItems.create(
-			'notionExportNoteAsDocMenuItem',
-			'notionExportNoteAsDoc',
-			MenuItemLocation.Tools,
-		);
-
-		await joplin.views.menuItems.create(
-			'notionExportNoteAsRtfMenuItem',
-			'notionExportNoteAsRtf',
-			MenuItemLocation.Tools,
-		);
-
-		await joplin.views.toolbarButtons.create(
-			'notionShareNoteAsTextBtn',
-			'notionShareNoteAsText',
-			ToolbarButtonLocation.NoteToolbar,
-		);
-
-		await joplin.views.toolbarButtons.create(
-			'notionShareNoteAsPdfBtn',
-			'notionShareNoteAsPdf',
-			ToolbarButtonLocation.NoteToolbar,
-		);
-
-		await joplin.views.toolbarButtons.create(
-			'notionExportNoteAsDocBtn',
-			'notionExportNoteAsDoc',
-			ToolbarButtonLocation.NoteToolbar,
-		);
-
-		await joplin.views.toolbarButtons.create(
-			'notionExportNoteAsRtfBtn',
-			'notionExportNoteAsRtf',
-			ToolbarButtonLocation.NoteToolbar,
 		);
 	},
 });
