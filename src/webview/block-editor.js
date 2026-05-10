@@ -33,6 +33,14 @@
   let yankBuffer = null;
   /** True while in visual-selection sub-mode within block mode. */
   let vimBlockVisual = false;
+  /** The contenteditable element where visual mode started. */
+  let visualBlockCE = null;
+  /** Character indices (not DOM node refs) — robust against EditorJS text-node normalization. */
+  let visualAnchorCI = 0;
+  let visualFocusCI  = 0;
+  /** Pending operator in block mode (e.g. 'd' waiting for a motion). */
+  let vimBlockPending = null;
+  let vimBlockPendingTimer = null;
 
   // ── Undo stack ─────────────────────────────────────────────────────────────
 
@@ -199,6 +207,98 @@
     try { editor.caret.setToBlock(vimIndex, position); } catch (_) {}
   };
 
+  // ── Visual selection helpers ────────────────────────────────────────────────
+
+  /** Sum of text lengths of all text nodes before (node, offset) inside root. */
+  const textOffsetOf = (root, node, offset) => {
+    if (!root || !node) return 0;
+    let total = 0;
+    const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+    let n;
+    while ((n = w.nextNode())) {
+      if (n === node) return total + offset;
+      total += n.nodeValue.length;
+    }
+    return total + offset;
+  };
+
+  /** Find text (node, offset) at character index ci inside root. */
+  const nodeAtCI = (root, ci) => {
+    if (!root) return null;
+    let rem = ci;
+    const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+    let n;
+    while ((n = w.nextNode())) {
+      if (rem <= n.nodeValue.length) return { node: n, offset: rem };
+      rem -= n.nodeValue.length;
+    }
+    return n ? { node: n, offset: n.nodeValue.length } : null;
+  };
+
+  // CSS Custom Highlight API — renders vim visual selection without touching
+  // window.getSelection(), so EditorJS's selectionchange handler never fires
+  // and never has a chance to steal focus or collapse the selection.
+  const _cssh = (typeof CSS !== 'undefined' && typeof Highlight !== 'undefined' && CSS.highlights) || null;
+
+  const _buildVisualRange = () => {
+    if (!visualBlockCE) return null;
+    const a = nodeAtCI(visualBlockCE, visualAnchorCI);
+    const f = nodeAtCI(visualBlockCE, visualFocusCI);
+    if (!a || !f) return null;
+    try {
+      const r = new Range();
+      if (visualFocusCI >= visualAnchorCI) { r.setStart(a.node, a.offset); r.setEnd(f.node, f.offset); }
+      else                                  { r.setStart(f.node, f.offset); r.setEnd(a.node, a.offset); }
+      return r;
+    } catch (_) { return null; }
+  };
+
+  const applyVisualHighlight = () => {
+    const r = _buildVisualRange();
+    if (!r) return;
+    if (_cssh) {
+      // Preferred: CSS highlight — no selectionchange, no EditorJS interference
+      _cssh.set('vim-visual', new Highlight(r));
+    } else {
+      // Fallback: browser selection (older Electron without CSS Highlight API)
+      const sel = window.getSelection();
+      if (sel) { sel.removeAllRanges(); sel.addRange(r); }
+    }
+  };
+
+  const clearVisualHighlight = () => {
+    if (_cssh) _cssh.delete('vim-visual');
+  };
+
+  /**
+   * Extend the visual selection by one step.
+   * Key insight: we keep the DOM selection COLLAPSED at the focus position so
+   * EditorJS never sees an extended selection → no selectionchange interference.
+   * The visual highlight is shown via CSS Custom Highlight API instead.
+   */
+  const vimVisualMove = (dir, gran) => {
+    const sel = window.getSelection();
+    if (!sel || !visualBlockCE) return;
+
+    const focusPos = nodeAtCI(visualBlockCE, visualFocusCI);
+    if (!focusPos) return;
+
+    // Ensure CE has focus so sel.modify works
+    if (document.activeElement !== visualBlockCE) {
+      visualBlockCE.focus({ preventScroll: true });
+    }
+
+    // Cursor is collapsed — just move it
+    sel.collapse(focusPos.node, focusPos.offset);
+    sel.modify('move', dir, gran);
+
+    // Track new focus position as char index
+    visualFocusCI = textOffsetOf(visualBlockCE, sel.focusNode, sel.focusOffset);
+
+    // Show highlight (no sel.addRange → no selectionchange → EditorJS stays quiet)
+    applyVisualHighlight();
+  };
+
   const cancelPending = () => {
     clearTimeout(vimPendingTimer);
     vimPendingKey = null;
@@ -356,9 +456,12 @@
           return;
         }
         if (vimMode === 'block' && vimBlockVisual) {
-          // Esc from visual → block (collapse selection, stay in block)
+          // Esc from visual → block (collapse to tracked focus)
+          const fp = nodeAtCI(visualBlockCE, visualFocusCI);
+          const s = window.getSelection();
+          if (s && fp) s.collapse(fp.node, fp.offset);
           vimBlockVisual = false;
-          window.getSelection()?.modify('move', 'forward', 'character'); // collapse
+          visualBlockCE = null; visualAnchorCI = 0; visualFocusCI = 0;
           updateVimUI();
           e.preventDefault();
           e.stopImmediatePropagation();
@@ -400,67 +503,138 @@
         e.stopImmediatePropagation(); // prevent EditorJS handlers from reacting
         const key = getVimKey(e);
         const sel = window.getSelection();
-        // In visual mode movements extend the selection; otherwise just move cursor.
-        const mm = vimBlockVisual ? 'extend' : 'move';
+
+        const move = (dir, gran) => sel?.modify('move', dir, gran);
+        const visualMove = (dir, gran) => vimBlockVisual ? vimVisualMove(dir, gran) : move(dir, gran);
+
+        // Find the contenteditable that owns the cursor
+        const curCE = () =>
+          (sel?.focusNode?.nodeType === Node.TEXT_NODE
+            ? sel.focusNode.parentElement
+            : sel?.focusNode)?.closest('[contenteditable]')
+          ?? document.querySelector('#editor-container [contenteditable]');
+
+        // Enter visual mode — save anchor at current cursor (char index)
+        const enterVisual = () => {
+          const ce = curCE();
+          const ci = ce ? textOffsetOf(ce, sel?.focusNode, sel?.focusOffset ?? 0) : 0;
+          vimBlockVisual = true;
+          visualBlockCE  = ce;
+          visualAnchorCI = ci;
+          visualFocusCI  = ci;
+        };
+
+        // Exit visual mode — clear all visual state and highlight
+        const clearVisual = () => {
+          clearVisualHighlight();
+          vimBlockVisual = false;
+          visualBlockCE  = null;
+          visualAnchorCI = 0;
+          visualFocusCI  = 0;
+        };
+
+        // Delete from cursor through a motion (de, dw, db, d$, d0, dh, dl)
+        const deleteMotion = (motionDir, motionGran) => {
+          if (!sel || !sel.focusNode) return;
+          const startNode = sel.focusNode, startOff = sel.focusOffset;
+          sel.collapse(startNode, startOff);
+          sel.modify('move', motionDir, motionGran);
+          const endNode = sel.focusNode, endOff = sel.focusOffset;
+          if (!endNode) return;
+          try {
+            const r = document.createRange();
+            if (motionDir === 'forward') { r.setStart(startNode, startOff); r.setEnd(endNode, endOff); }
+            else                         { r.setStart(endNode, endOff);     r.setEnd(startNode, startOff); }
+            if (!r.collapsed) { r.deleteContents(); scheduleSave(); }
+          } catch (_) {}
+        };
+
+        // ── Pending d+motion (de, dw, db, d$, d0, dh, dl) ─────────────────
+        if (vimBlockPending === 'd' && !vimBlockVisual) {
+          clearTimeout(vimBlockPendingTimer);
+          vimBlockPending = null;
+          if (key === 'e' || key === 'w' || key === 'W') { deleteMotion('forward',  'word');         return; }
+          if (key === 'b' || key === 'B')                { deleteMotion('backward', 'word');         return; }
+          if (key === '$')                               { deleteMotion('forward',  'lineboundary'); return; }
+          if (key === '0')                               { deleteMotion('backward', 'lineboundary'); return; }
+          if (key === 'h' || e.key === 'ArrowLeft')      { deleteMotion('backward', 'character');    return; }
+          if (key === 'l' || e.key === 'ArrowRight')     { deleteMotion('forward',  'character');    return; }
+          if (key === 'd') {
+            // dd: delete entire line content
+            move('backward', 'lineboundary');
+            deleteMotion('forward', 'lineboundary');
+            return;
+          }
+          return; // unknown motion: ignore
+        }
 
         // ── Visual mode toggle ──────────────────────────────────────────────
-        if (key === 'v') { vimBlockVisual = !vimBlockVisual; updateVimUI(); return; }
+        if (key === 'v') {
+          if (vimBlockVisual) {
+            const fp = nodeAtCI(visualBlockCE, visualFocusCI);
+            if (sel && fp) sel.collapse(fp.node, fp.offset);
+            clearVisual();
+          } else {
+            enterVisual();
+          }
+          updateVimUI();
+          return;
+        }
         if (key === 'V') {
-          // Visual line: select entire current line
-          sel?.modify('move', 'backward', 'lineboundary');
-          sel?.modify('extend', 'forward', 'lineboundary');
-          vimBlockVisual = true;
+          move('backward', 'lineboundary');
+          enterVisual();
+          vimVisualMove('forward', 'lineboundary');
           updateVimUI();
           return;
         }
 
         // ── Cursor / selection movement ─────────────────────────────────────
-        if (key === 'h' || e.key === 'ArrowLeft')  { sel?.modify(mm, 'backward', 'character'); return; }
-        if (key === 'l' || e.key === 'ArrowRight') { sel?.modify(mm, 'forward',  'character'); return; }
-        if (key === 'j' || e.key === 'ArrowDown')  { sel?.modify(mm, 'forward',  'line');      return; }
-        if (key === 'k' || e.key === 'ArrowUp')    { sel?.modify(mm, 'backward', 'line');      return; }
-        if (key === 'w' || key === 'W') { sel?.modify(mm, 'forward',  'word'); return; }
-        if (key === 'b' || key === 'B') { sel?.modify(mm, 'backward', 'word'); return; }
-        if (key === 'e')  { sel?.modify(mm, 'forward',  'word');          return; }
-        if (key === '0')  { sel?.modify(mm, 'backward', 'lineboundary'); return; }
-        if (key === '$')  { sel?.modify(mm, 'forward',  'lineboundary'); return; }
+        if (key === 'h' || e.key === 'ArrowLeft')  { visualMove('backward', 'character'); return; }
+        if (key === 'l' || e.key === 'ArrowRight') { visualMove('forward',  'character'); return; }
+        if (key === 'j' || e.key === 'ArrowDown')  { visualMove('forward',  'line');      return; }
+        if (key === 'k' || e.key === 'ArrowUp')    { visualMove('backward', 'line');      return; }
+        if (key === 'w' || key === 'W') { visualMove('forward',  'word'); return; }
+        if (key === 'b' || key === 'B') { visualMove('backward', 'word'); return; }
+        if (key === 'e')  { visualMove('forward',  'word');          return; }
+        if (key === '0')  { visualMove('backward', 'lineboundary'); return; }
+        if (key === '$')  { visualMove('forward',  'lineboundary'); return; }
 
         // ── Visual mode operations ──────────────────────────────────────────
         if (vimBlockVisual) {
           if (key === 'y') {
-            // Yank selection to clipboard
+            // Build the actual DOM selection for clipboard read
+            const r = _buildVisualRange();
+            if (r && sel) { sel.removeAllRanges(); sel.addRange(r); }
             const text = sel?.toString() ?? '';
             if (text) navigator.clipboard?.writeText(text).catch(() => {});
-            sel?.modify('move', 'forward', 'character'); // collapse
-            vimBlockVisual = false;
+            const fp = nodeAtCI(visualBlockCE, visualFocusCI);
+            if (sel && fp) sel.collapse(fp.node, fp.offset);
+            clearVisual();
             updateVimUI();
             return;
           }
           if (key === 'd' || key === 'x') {
-            // Delete selection
-            if (sel && sel.rangeCount > 0) {
-              const r = sel.getRangeAt(0);
-              if (!r.collapsed) { r.deleteContents(); scheduleSave(); }
-            }
-            vimBlockVisual = false;
+            const r = _buildVisualRange();
+            if (r && !r.collapsed) { r.deleteContents(); scheduleSave(); }
+            clearVisual();
             updateVimUI();
             return;
           }
         }
 
         // ── Enter insert mode ───────────────────────────────────────────────
-        if (key === 'i') { vimBlockVisual = false; vimMode = 'insert'; updateVimUI(); return; }
-        if (key === 'a') { sel?.modify('move', 'forward', 'character'); vimBlockVisual = false; vimMode = 'insert'; updateVimUI(); return; }
-        if (key === 'I') { sel?.modify('move', 'backward', 'lineboundary'); vimBlockVisual = false; vimMode = 'insert'; updateVimUI(); return; }
-        if (key === 'A') { sel?.modify('move', 'forward',  'lineboundary'); vimBlockVisual = false; vimMode = 'insert'; updateVimUI(); return; }
+        if (key === 'i') { clearVisual(); vimMode = 'insert'; updateVimUI(); return; }
+        if (key === 'a') { move('forward', 'character'); clearVisual(); vimMode = 'insert'; updateVimUI(); return; }
+        if (key === 'I') { move('backward', 'lineboundary'); clearVisual(); vimMode = 'insert'; updateVimUI(); return; }
+        if (key === 'A') { move('forward',  'lineboundary'); clearVisual(); vimMode = 'insert'; updateVimUI(); return; }
 
         // ── Single-char delete (non-visual) ────────────────────────────────
-        if (key === 'x') {
-          if (sel && sel.rangeCount > 0) {
-            sel.modify('extend', 'forward', 'character');
-            const range = sel.getRangeAt(0);
-            if (!range.collapsed) { range.deleteContents(); scheduleSave(); }
-          }
+        if (key === 'x') { deleteMotion('forward', 'character'); return; }
+
+        // ── Operator pending (d waits for motion) ───────────────────────────
+        if (key === 'd' && !vimBlockVisual) {
+          vimBlockPending = 'd';
+          vimBlockPendingTimer = setTimeout(() => { vimBlockPending = null; }, VIM_PENDING_MS);
           return;
         }
 

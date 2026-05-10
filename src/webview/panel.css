@@ -87,6 +87,11 @@ body {
 	height: 100%;
 }
 
+::highlight(vim-visual) {
+	background-color: var(--selection-bg);
+	color: var(--selection-text);
+}
+
 #editor-container ::selection,
 #editor-container [contenteditable]::selection,
 #editor-container [contenteditable] *::selection {
