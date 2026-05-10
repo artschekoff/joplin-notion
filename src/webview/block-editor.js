@@ -204,11 +204,14 @@
     vimPendingKey = null;
   };
 
+  // All 26 letter key codes → vim key (physical position, layout-independent).
   const CODE_TO_VIM_KEY = {
-    'KeyH': 'h', 'KeyJ': 'j', 'KeyK': 'k', 'KeyL': 'l',
-    'KeyG': 'g', 'KeyD': 'd', 'KeyY': 'y', 'KeyU': 'u',
-    'KeyI': 'i', 'KeyA': 'a', 'KeyO': 'o', 'KeyP': 'p',
-    'KeyC': 'c', 'KeyW': 'w', 'KeyB': 'b', 'KeyE': 'e', 'KeyX': 'x',
+    'KeyA': 'a', 'KeyB': 'b', 'KeyC': 'c', 'KeyD': 'd', 'KeyE': 'e',
+    'KeyF': 'f', 'KeyG': 'g', 'KeyH': 'h', 'KeyI': 'i', 'KeyJ': 'j',
+    'KeyK': 'k', 'KeyL': 'l', 'KeyM': 'm', 'KeyN': 'n', 'KeyO': 'o',
+    'KeyP': 'p', 'KeyQ': 'q', 'KeyR': 'r', 'KeyS': 's', 'KeyT': 't',
+    'KeyU': 'u', 'KeyV': 'v', 'KeyW': 'w', 'KeyX': 'x', 'KeyY': 'y',
+    'KeyZ': 'z',
   };
 
   const getVimKey = (e) => {
@@ -500,6 +503,11 @@
     tools.askAI = { class: AskAIInlineTool };
     tools.askAITune = { class: AskAIBlockTune };
 
+    // Register vim keydown listener BEFORE new EditorJS() so our document-capture
+    // handler fires before EditorJS's (registration order determines capture order).
+    // This lets e.stopImmediatePropagation() in block mode fully block EditorJS.
+    attachVimListeners();
+
     editor = new window.EditorJS({
       holder: 'editor-container',
       autofocus: false,
@@ -511,7 +519,6 @@
         if (typeof window.DragDrop === 'function') {
           new window.DragDrop(editor);
         }
-        attachVimListeners();
         updateVimUI();
         if (typeof window.webviewApi !== 'undefined') {
           window.webviewApi.postMessage({ type: 'getNote' });
