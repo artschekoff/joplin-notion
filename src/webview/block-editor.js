@@ -160,13 +160,17 @@
 
   const updateVimUI = () => {
     const el = vimStatusEl();
-    if (el) el.textContent = vimMode === 'normal' ? '-- NORMAL --' : '-- INSERT --';
+    if (el) {
+      if (vimMode === 'normal') el.textContent = '-- NORMAL --';
+      else if (vimMode === 'block') el.textContent = '-- BLOCK --';
+      else el.textContent = '-- INSERT --';
+    }
     const bar = document.getElementById('vim-statusbar');
     if (bar) bar.setAttribute('data-mode', vimMode);
 
-    // Block highlight
+    // Block highlight in both 'block' and 'normal' modes
     document.querySelectorAll('.ce-block--vim').forEach(b => b.classList.remove('ce-block--vim'));
-    if (vimMode === 'normal') {
+    if (vimMode === 'normal' || vimMode === 'block') {
       const blocks = document.querySelectorAll('#editor-container .ce-block');
       if (blocks[vimIndex]) blocks[vimIndex].classList.add('ce-block--vim');
     }
@@ -329,16 +333,24 @@
     document.addEventListener('keydown', async (e) => {
       if (!container.contains(e.target) && e.target !== container) return;
 
-      if (e.key === 'Escape' && vimMode === 'insert') {
-        try { vimIndex = editor.blocks.getCurrentBlockIndex(); } catch (_) {}
-        if (document.activeElement) document.activeElement.blur();
-        // Keep focus on the container so subsequent keydown events (hjkl) still
-        // pass the container guard above and reach handleVimKey.
-        container.focus();
-        vimMode = 'normal';
-        updateVimUI();
-        e.preventDefault();
-        return;
+      if (e.key === 'Escape') {
+        if (vimMode === 'insert') {
+          // First Esc: insert → block mode (anchored to current block, not navigating yet)
+          try { vimIndex = editor.blocks.getCurrentBlockIndex(); } catch (_) {}
+          if (document.activeElement) document.activeElement.blur();
+          container.focus();
+          vimMode = 'block';
+          updateVimUI();
+          e.preventDefault();
+          return;
+        }
+        if (vimMode === 'block') {
+          // Second Esc: block → normal navigation mode
+          vimMode = 'normal';
+          updateVimUI();
+          e.preventDefault();
+          return;
+        }
       }
 
       // Ctrl+Z / Cmd+Z — always intercept once any change has been made so
@@ -355,6 +367,13 @@
           }
           return;
         }
+      }
+
+      // Block mode: re-enter insert with i/a, everything else waits for Esc→normal
+      if (vimMode === 'block') {
+        const key = getVimKey(e);
+        if (key === 'i') { e.preventDefault(); vimEnterInsert('start'); return; }
+        if (key === 'a') { e.preventDefault(); vimEnterInsert('end'); return; }
       }
 
       if (vimMode === 'normal') {

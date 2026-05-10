@@ -144,6 +144,12 @@ body {
 	user-select: none;
 }
 
+#vim-statusbar[data-mode='block'] {
+	background: #16a34a;
+	color: #ffffff;
+	border-top-color: #16a34a;
+}
+
 #vim-statusbar[data-mode='normal'] {
 	background: var(--border-focus);
 	color: #ffffff;
