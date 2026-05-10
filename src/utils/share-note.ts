@@ -160,6 +160,35 @@ export const exportNoteWithPandoc = async (opts: {
 };
 
 /**
+ * Imports a document (DOCX, RTF, or MD) to Markdown via pandoc.
+ * Writes content to a temp file, runs pandoc -t markdown, returns the result.
+ * Cleans up temp files on completion.
+ */
+export const importNoteWithPandoc = async (opts: {
+	content: Buffer;
+	format: 'docx' | 'rtf' | 'md';
+	filename: string;
+}): Promise<string> => {
+	const tmpDir = os.tmpdir();
+	const base = sanitizeFilename(opts.filename.replace(/\.[^.]+$/, '') || 'import');
+	const inputPath = path.join(tmpDir, `${base}-import.${opts.format}`);
+	const outputPath = path.join(tmpDir, `${base}-import-out.md`);
+	await fs.promises.writeFile(inputPath, opts.content);
+	await execFileAsync('pandoc', [
+		inputPath,
+		'-t', 'markdown',
+		'--wrap=none',
+		'-o', outputPath,
+	]);
+	const markdown = await fs.promises.readFile(outputPath, 'utf-8');
+	await Promise.allSettled([
+		fs.promises.unlink(inputPath),
+		fs.promises.unlink(outputPath),
+	]);
+	return markdown;
+};
+
+/**
  * Copies a file into a target directory, preserving the original filename.
  * Returns the full path of the destination file.
  */
