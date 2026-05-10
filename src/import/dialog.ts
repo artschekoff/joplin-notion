@@ -89,7 +89,7 @@ export async function showImportDialog(): Promise<void> {
 	try {
 		const note = await joplin.workspace.selectedNote();
 		parentId = note?.parent_id as string | undefined;
-	} catch (_) {}
+	} catch {}
 
 	await joplin.data.post(['notes'], null, {
 		title,

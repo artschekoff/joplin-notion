@@ -6,6 +6,7 @@ import { importNoteWithPandoc } from '../utils/share-note';
 // Only runs if pandoc is installed on the system.
 const hasPandoc = (() => {
 	try {
+		// eslint-disable-next-line @typescript-eslint/no-require-imports
 		require('child_process').execFileSync('pandoc', ['--version']);
 		return true;
 	} catch {

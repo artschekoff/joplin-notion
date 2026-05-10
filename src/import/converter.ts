@@ -1,7 +1,8 @@
-// eslint-disable-next-line @typescript-eslint/no-var-requires
+/* eslint-disable @typescript-eslint/no-require-imports */
 const pdfParse: (
 	buf: Buffer,
 ) => Promise<{ text: string; info: Record<string, unknown> }> = require('pdf-parse');
+/* eslint-enable @typescript-eslint/no-require-imports */
 import { importNoteWithPandoc } from '../utils/share-note';
 
 export interface ConvertResult {

@@ -1,5 +1,5 @@
 import joplin from 'api';
-import { MenuItemLocation, SettingItemType, ToolbarButtonLocation } from 'api/types';
+import { MenuItemLocation, SettingItemType } from 'api/types';
 import { initPanel, toggleBlockEditorPane } from './panel';
 import { shareCurrentNote } from './export';
 import { showImportDialog } from './import/dialog';
