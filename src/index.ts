@@ -2,6 +2,7 @@ import joplin from 'api';
 import { MenuItemLocation, SettingItemType, ToolbarButtonLocation } from 'api/types';
 import { initPanel, toggleBlockEditorPane } from './panel';
 import { shareCurrentNote } from './export';
+import { showImportDialog } from './import/dialog';
 
 joplin.plugins.register({
 	onStart: async () => {
@@ -101,6 +102,22 @@ joplin.plugins.register({
 				}
 			},
 		});
+
+		// ── Import commands ──────────────────────────────────────────────────────
+
+		await joplin.commands.register({
+			name: 'importNoteFromDocument',
+			label: 'Import Note from Document…',
+			execute: async () => {
+				await showImportDialog();
+			},
+		});
+
+		await joplin.views.menuItems.create(
+			'importNoteFromDocumentMenuItem',
+			'importNoteFromDocument',
+			MenuItemLocation.Tools,
+		);
 
 		// ── Export submenu under Tools ───────────────────────────────────────────
 
