@@ -156,6 +156,11 @@ body {
 	border-top-color: #d97706;
 }
 
+/* Hide EditorJS inline toolbar while vim visual mode is active so it cannot steal keyboard focus. */
+body.vim-block-visual .ce-inline-toolbar {
+	display: none !important;
+}
+
 #vim-statusbar[data-mode='normal'] {
 	background: var(--border-focus);
 	color: #ffffff;

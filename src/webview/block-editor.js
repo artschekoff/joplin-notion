@@ -170,6 +170,8 @@
     }
     const bar = document.getElementById('vim-statusbar');
     if (bar) bar.setAttribute('data-mode', vimMode === 'block' && vimBlockVisual ? 'visual' : vimMode);
+    // Suppress the EditorJS inline toolbar while in visual mode so it can't steal focus.
+    document.body.classList.toggle('vim-block-visual', vimMode === 'block' && vimBlockVisual);
 
     // Block highlight in both 'block' and 'normal' modes
     document.querySelectorAll('.ce-block--vim').forEach(b => b.classList.remove('ce-block--vim'));
