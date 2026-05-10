@@ -203,10 +203,13 @@
     'KeyH': 'h', 'KeyJ': 'j', 'KeyK': 'k', 'KeyL': 'l',
     'KeyG': 'g', 'KeyD': 'd', 'KeyY': 'y', 'KeyU': 'u',
     'KeyI': 'i', 'KeyA': 'a', 'KeyO': 'o', 'KeyP': 'p',
-    'KeyC': 'c',
+    'KeyC': 'c', 'KeyW': 'w', 'KeyB': 'b', 'KeyE': 'e', 'KeyX': 'x',
   };
 
   const getVimKey = (e) => {
+    // Physical-key overrides for layout-independent Shift combos
+    if (e.code === 'Digit4' && e.shiftKey) return '$';
+    if (e.code === 'Digit6' && e.shiftKey) return '^';
     const base = CODE_TO_VIM_KEY[e.code];
     if (base !== undefined) return e.shiftKey ? base.toUpperCase() : base;
     return e.key;
@@ -335,20 +338,23 @@
 
       if (e.key === 'Escape') {
         if (vimMode === 'insert') {
-          // First Esc: insert → block mode (anchored to current block, not navigating yet)
+          // First Esc: insert → block mode; keep contenteditable focused so
+          // Selection.modify() works for in-block vim navigation.
           try { vimIndex = editor.blocks.getCurrentBlockIndex(); } catch (_) {}
-          if (document.activeElement) document.activeElement.blur();
-          container.focus();
           vimMode = 'block';
           updateVimUI();
           e.preventDefault();
+          e.stopImmediatePropagation();
           return;
         }
         if (vimMode === 'block') {
-          // Second Esc: block → normal navigation mode
+          // Second Esc: block → normal navigation mode; now we leave the block.
+          if (document.activeElement) document.activeElement.blur();
+          container.focus();
           vimMode = 'normal';
           updateVimUI();
           e.preventDefault();
+          e.stopImmediatePropagation();
           return;
         }
       }
@@ -369,11 +375,46 @@
         }
       }
 
-      // Block mode: re-enter insert with i/a, everything else waits for Esc→normal
+      // Block mode: in-block vim navigation (contenteditable stays focused).
+      // Selection.modify() is available in all Chromium/Electron environments.
       if (vimMode === 'block') {
+        e.preventDefault();
+        e.stopImmediatePropagation(); // prevent EditorJS handlers from reacting
         const key = getVimKey(e);
-        if (key === 'i') { e.preventDefault(); vimEnterInsert('start'); return; }
-        if (key === 'a') { e.preventDefault(); vimEnterInsert('end'); return; }
+        const sel = window.getSelection();
+
+        // Cursor movement
+        if (key === 'h') { sel?.modify('move', 'backward', 'character'); return; }
+        if (key === 'l') { sel?.modify('move', 'forward',  'character'); return; }
+        if (key === 'j') { sel?.modify('move', 'forward',  'line');      return; }
+        if (key === 'k') { sel?.modify('move', 'backward', 'line');      return; }
+        if (key === 'w' || key === 'W') { sel?.modify('move', 'forward',  'word'); return; }
+        if (key === 'b' || key === 'B') { sel?.modify('move', 'backward', 'word'); return; }
+        if (key === 'e')  { sel?.modify('move', 'forward',  'word');          return; }
+        if (key === '0')  { sel?.modify('move', 'backward', 'lineboundary'); return; }
+        if (key === '$')  { sel?.modify('move', 'forward',  'lineboundary'); return; }
+
+        // Enter insert at current cursor position
+        if (key === 'i') { vimMode = 'insert'; updateVimUI(); return; }
+        // Enter insert one char forward
+        if (key === 'a') { sel?.modify('move', 'forward', 'character'); vimMode = 'insert'; updateVimUI(); return; }
+        // Enter insert at start of line
+        if (key === 'I') { sel?.modify('move', 'backward', 'lineboundary'); vimMode = 'insert'; updateVimUI(); return; }
+        // Enter insert at end of line
+        if (key === 'A') { sel?.modify('move', 'forward', 'lineboundary'); vimMode = 'insert'; updateVimUI(); return; }
+
+        // Delete char under cursor
+        if (key === 'x') {
+          if (sel && sel.rangeCount > 0) {
+            sel.modify('extend', 'forward', 'character');
+            const range = sel.getRangeAt(0);
+            if (!range.collapsed) { range.deleteContents(); scheduleSave(); }
+          }
+          return;
+        }
+
+        // All other keys: silently consumed — block mode blocks text input
+        return;
       }
 
       if (vimMode === 'normal') {
