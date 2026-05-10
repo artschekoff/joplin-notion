@@ -150,6 +150,12 @@ body {
 	border-top-color: #16a34a;
 }
 
+#vim-statusbar[data-mode='visual'] {
+	background: #d97706;
+	color: #ffffff;
+	border-top-color: #d97706;
+}
+
 #vim-statusbar[data-mode='normal'] {
 	background: var(--border-focus);
 	color: #ffffff;

@@ -23,14 +23,16 @@
 
   // ── Vim state ──────────────────────────────────────────────────────────────
 
-  /** @type {'insert'|'normal'} */
+  /** @type {'insert'|'block'|'normal'} */
   let vimMode = 'insert';
-  let vimIndex = 0;         // currently selected block in normal mode
-  let vimPendingKey = null; // waiting for composite (dd / gg / yy)
+  let vimIndex = 0;          // currently selected block in normal mode
+  let vimPendingKey = null;  // waiting for composite (dd / gg / yy)
   let vimPendingTimer = null;
   const VIM_PENDING_MS = 600;
   /** @type {{ type: string, data: any } | null} */
   let yankBuffer = null;
+  /** True while in visual-selection sub-mode within block mode. */
+  let vimBlockVisual = false;
 
   // ── Undo stack ─────────────────────────────────────────────────────────────
 
@@ -162,11 +164,12 @@
     const el = vimStatusEl();
     if (el) {
       if (vimMode === 'normal') el.textContent = '-- NORMAL --';
+      else if (vimMode === 'block' && vimBlockVisual) el.textContent = '-- VISUAL --';
       else if (vimMode === 'block') el.textContent = '-- BLOCK --';
       else el.textContent = '-- INSERT --';
     }
     const bar = document.getElementById('vim-statusbar');
-    if (bar) bar.setAttribute('data-mode', vimMode);
+    if (bar) bar.setAttribute('data-mode', vimMode === 'block' && vimBlockVisual ? 'visual' : vimMode);
 
     // Block highlight in both 'block' and 'normal' modes
     document.querySelectorAll('.ce-block--vim').forEach(b => b.classList.remove('ce-block--vim'));
@@ -338,20 +341,30 @@
 
       if (e.key === 'Escape') {
         if (vimMode === 'insert') {
-          // First Esc: insert → block mode; keep contenteditable focused so
-          // Selection.modify() works for in-block vim navigation.
+          // Esc from insert → block (keep contenteditable focused for in-block vim)
           try { vimIndex = editor.blocks.getCurrentBlockIndex(); } catch (_) {}
           vimMode = 'block';
+          vimBlockVisual = false;
+          updateVimUI();
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          return;
+        }
+        if (vimMode === 'block' && vimBlockVisual) {
+          // Esc from visual → block (collapse selection, stay in block)
+          vimBlockVisual = false;
+          window.getSelection()?.modify('move', 'forward', 'character'); // collapse
           updateVimUI();
           e.preventDefault();
           e.stopImmediatePropagation();
           return;
         }
         if (vimMode === 'block') {
-          // Second Esc: block → normal navigation mode; now we leave the block.
+          // Esc from block → normal navigation (leave the block)
           if (document.activeElement) document.activeElement.blur();
           container.focus();
           vimMode = 'normal';
+          vimBlockVisual = false;
           updateVimUI();
           e.preventDefault();
           e.stopImmediatePropagation();
@@ -382,28 +395,61 @@
         e.stopImmediatePropagation(); // prevent EditorJS handlers from reacting
         const key = getVimKey(e);
         const sel = window.getSelection();
+        // In visual mode movements extend the selection; otherwise just move cursor.
+        const mm = vimBlockVisual ? 'extend' : 'move';
 
-        // Cursor movement
-        if (key === 'h') { sel?.modify('move', 'backward', 'character'); return; }
-        if (key === 'l') { sel?.modify('move', 'forward',  'character'); return; }
-        if (key === 'j') { sel?.modify('move', 'forward',  'line');      return; }
-        if (key === 'k') { sel?.modify('move', 'backward', 'line');      return; }
-        if (key === 'w' || key === 'W') { sel?.modify('move', 'forward',  'word'); return; }
-        if (key === 'b' || key === 'B') { sel?.modify('move', 'backward', 'word'); return; }
-        if (key === 'e')  { sel?.modify('move', 'forward',  'word');          return; }
-        if (key === '0')  { sel?.modify('move', 'backward', 'lineboundary'); return; }
-        if (key === '$')  { sel?.modify('move', 'forward',  'lineboundary'); return; }
+        // ── Visual mode toggle ──────────────────────────────────────────────
+        if (key === 'v') { vimBlockVisual = !vimBlockVisual; updateVimUI(); return; }
+        if (key === 'V') {
+          // Visual line: select entire current line
+          sel?.modify('move', 'backward', 'lineboundary');
+          sel?.modify('extend', 'forward', 'lineboundary');
+          vimBlockVisual = true;
+          updateVimUI();
+          return;
+        }
 
-        // Enter insert at current cursor position
-        if (key === 'i') { vimMode = 'insert'; updateVimUI(); return; }
-        // Enter insert one char forward
-        if (key === 'a') { sel?.modify('move', 'forward', 'character'); vimMode = 'insert'; updateVimUI(); return; }
-        // Enter insert at start of line
-        if (key === 'I') { sel?.modify('move', 'backward', 'lineboundary'); vimMode = 'insert'; updateVimUI(); return; }
-        // Enter insert at end of line
-        if (key === 'A') { sel?.modify('move', 'forward', 'lineboundary'); vimMode = 'insert'; updateVimUI(); return; }
+        // ── Cursor / selection movement ─────────────────────────────────────
+        if (key === 'h' || e.key === 'ArrowLeft')  { sel?.modify(mm, 'backward', 'character'); return; }
+        if (key === 'l' || e.key === 'ArrowRight') { sel?.modify(mm, 'forward',  'character'); return; }
+        if (key === 'j' || e.key === 'ArrowDown')  { sel?.modify(mm, 'forward',  'line');      return; }
+        if (key === 'k' || e.key === 'ArrowUp')    { sel?.modify(mm, 'backward', 'line');      return; }
+        if (key === 'w' || key === 'W') { sel?.modify(mm, 'forward',  'word'); return; }
+        if (key === 'b' || key === 'B') { sel?.modify(mm, 'backward', 'word'); return; }
+        if (key === 'e')  { sel?.modify(mm, 'forward',  'word');          return; }
+        if (key === '0')  { sel?.modify(mm, 'backward', 'lineboundary'); return; }
+        if (key === '$')  { sel?.modify(mm, 'forward',  'lineboundary'); return; }
 
-        // Delete char under cursor
+        // ── Visual mode operations ──────────────────────────────────────────
+        if (vimBlockVisual) {
+          if (key === 'y') {
+            // Yank selection to clipboard
+            const text = sel?.toString() ?? '';
+            if (text) navigator.clipboard?.writeText(text).catch(() => {});
+            sel?.modify('move', 'forward', 'character'); // collapse
+            vimBlockVisual = false;
+            updateVimUI();
+            return;
+          }
+          if (key === 'd' || key === 'x') {
+            // Delete selection
+            if (sel && sel.rangeCount > 0) {
+              const r = sel.getRangeAt(0);
+              if (!r.collapsed) { r.deleteContents(); scheduleSave(); }
+            }
+            vimBlockVisual = false;
+            updateVimUI();
+            return;
+          }
+        }
+
+        // ── Enter insert mode ───────────────────────────────────────────────
+        if (key === 'i') { vimBlockVisual = false; vimMode = 'insert'; updateVimUI(); return; }
+        if (key === 'a') { sel?.modify('move', 'forward', 'character'); vimBlockVisual = false; vimMode = 'insert'; updateVimUI(); return; }
+        if (key === 'I') { sel?.modify('move', 'backward', 'lineboundary'); vimBlockVisual = false; vimMode = 'insert'; updateVimUI(); return; }
+        if (key === 'A') { sel?.modify('move', 'forward',  'lineboundary'); vimBlockVisual = false; vimMode = 'insert'; updateVimUI(); return; }
+
+        // ── Single-char delete (non-visual) ────────────────────────────────
         if (key === 'x') {
           if (sel && sel.rangeCount > 0) {
             sel.modify('extend', 'forward', 'character');
