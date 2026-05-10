@@ -195,11 +195,24 @@
     vimPendingKey = null;
   };
 
+  const CODE_TO_VIM_KEY = {
+    'KeyH': 'h', 'KeyJ': 'j', 'KeyK': 'k', 'KeyL': 'l',
+    'KeyG': 'g', 'KeyD': 'd', 'KeyY': 'y', 'KeyU': 'u',
+    'KeyI': 'i', 'KeyA': 'a', 'KeyO': 'o', 'KeyP': 'p',
+    'KeyC': 'c',
+  };
+
+  const getVimKey = (e) => {
+    const base = CODE_TO_VIM_KEY[e.code];
+    if (base !== undefined) return e.shiftKey ? base.toUpperCase() : base;
+    return e.key;
+  };
+
   /** @returns {boolean} true if key was consumed */
   const handleVimKey = async (e) => {
     if (vimMode !== 'normal') return false;
 
-    const key = e.key;
+    const key = getVimKey(e);
     const prev = vimPendingKey;
     cancelPending();
 
@@ -226,6 +239,18 @@
         const b = out.blocks[vimIndex];
         if (b) yankBuffer = { type: b.type, data: JSON.parse(JSON.stringify(b.data)) };
       } catch (_) {}
+      return true;
+    }
+    if (prev === 'c' && key === 'c') {
+      e.preventDefault();
+      try {
+        editor.blocks.delete(vimIndex);
+        editor.blocks.insert('paragraph', {}, null, vimIndex, true);
+      } catch (_) {}
+      vimMode = 'insert';
+      updateVimUI();
+      setTimeout(() => { try { editor.caret.setToBlock(vimIndex, 'start'); } catch (_) {} }, 0);
+      scheduleSave();
       return true;
     }
 
@@ -279,6 +304,7 @@
         return true;
 
       // Start composite
+      case 'c':
       case 'd':
       case 'g':
       case 'y':
@@ -332,6 +358,14 @@
       }
 
       if (vimMode === 'normal') {
+        if (e.ctrlKey && e.code === 'KeyD') {
+          const editorEl = document.getElementById('editor-container');
+          if (editorEl) { e.preventDefault(); editorEl.scrollBy({ top: editorEl.clientHeight / 2, behavior: 'smooth' }); return; }
+        }
+        if (e.ctrlKey && e.code === 'KeyU') {
+          const editorEl = document.getElementById('editor-container');
+          if (editorEl) { e.preventDefault(); editorEl.scrollBy({ top: -editorEl.clientHeight / 2, behavior: 'smooth' }); return; }
+        }
         await handleVimKey(e);
       }
     }, true);
