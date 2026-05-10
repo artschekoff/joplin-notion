@@ -16,11 +16,16 @@
     "validate": "npm run format:check && npm run lint && npm test"
   },
   "license": "MIT",
-  "keywords": ["joplin-plugin"],
-  "files": ["publish"],
+  "keywords": [
+    "joplin-plugin"
+  ],
+  "files": [
+    "publish"
+  ],
   "devDependencies": {
     "@types/jest": "^30.0.0",
     "@types/node": "^18.7.13",
+    "@types/pdf-parse": "^1.1.5",
     "@typescript-eslint/eslint-plugin": "^8.58.1",
     "@typescript-eslint/parser": "^8.58.1",
     "chalk": "^4.1.0",
@@ -46,6 +51,7 @@
     "glob": "^11.1.0"
   },
   "dependencies": {
-    "@joplin/utils": "3.5.1"
+    "@joplin/utils": "3.5.1",
+    "pdf-parse": "^2.4.5"
   }
 }
