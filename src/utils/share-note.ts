@@ -174,17 +174,9 @@ export const importNoteWithPandoc = async (opts: {
 	const inputPath = path.join(tmpDir, `${base}-import.${opts.format}`);
 	const outputPath = path.join(tmpDir, `${base}-import-out.md`);
 	await fs.promises.writeFile(inputPath, opts.content);
-	await execFileAsync('pandoc', [
-		inputPath,
-		'-t', 'markdown',
-		'--wrap=none',
-		'-o', outputPath,
-	]);
+	await execFileAsync('pandoc', [inputPath, '-t', 'markdown', '--wrap=none', '-o', outputPath]);
 	const markdown = await fs.promises.readFile(outputPath, 'utf-8');
-	await Promise.allSettled([
-		fs.promises.unlink(inputPath),
-		fs.promises.unlink(outputPath),
-	]);
+	await Promise.allSettled([fs.promises.unlink(inputPath), fs.promises.unlink(outputPath)]);
 	return markdown;
 };
 
