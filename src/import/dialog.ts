@@ -46,56 +46,54 @@ const DIALOG_HTML = `<!DOCTYPE html>
 let dialogHandle: string | null = null;
 
 async function ensureDialog(): Promise<string> {
-  if (dialogHandle) return dialogHandle;
-  dialogHandle = await joplin.views.dialogs.create('importNoteFromDocumentDialog');
-  await joplin.views.dialogs.setHtml(dialogHandle, DIALOG_HTML);
-  await joplin.views.dialogs.addScript(dialogHandle, './webview/import-dialog.js');
-  await joplin.views.dialogs.setButtons(dialogHandle, [
-    { id: 'ok',     title: 'Import' },
-    { id: 'cancel', title: 'Cancel' },
-  ]);
-  return dialogHandle;
+	if (dialogHandle) return dialogHandle;
+	dialogHandle = await joplin.views.dialogs.create('importNoteFromDocumentDialog');
+	await joplin.views.dialogs.setHtml(dialogHandle, DIALOG_HTML);
+	await joplin.views.dialogs.addScript(dialogHandle, './webview/import-dialog.js');
+	await joplin.views.dialogs.setButtons(dialogHandle, [
+		{ id: 'ok', title: 'Import' },
+		{ id: 'cancel', title: 'Cancel' },
+	]);
+	return dialogHandle;
 }
 
 export async function showImportDialog(): Promise<void> {
-  const handle = await ensureDialog();
-  const result = await joplin.views.dialogs.open(handle);
+	const handle = await ensureDialog();
+	const result = await joplin.views.dialogs.open(handle);
 
-  if (result.id !== 'ok') return;
+	if (result.id !== 'ok') return;
 
-  const form = result.formData?.importForm as Record<string, string> | undefined;
-  const content  = form?.content  ?? '';
-  const filename = form?.filename ?? 'Imported Note';
-  const ext      = form?.ext      ?? '';
+	const form = result.formData?.importForm as Record<string, string> | undefined;
+	const content = form?.content ?? '';
+	const filename = form?.filename ?? 'Imported Note';
+	const ext = form?.ext ?? '';
 
-  if (!content || !ext) {
-    await joplin.views.dialogs.showMessageBox('Please select a file before clicking Import.');
-    return;
-  }
+	if (!content || !ext) {
+		await joplin.views.dialogs.showMessageBox('Please select a file before clicking Import.');
+		return;
+	}
 
-  const buf = Buffer.from(content, 'base64');
+	const buf = Buffer.from(content, 'base64');
 
-  let converted;
-  try {
-    converted = await convertToMarkdown(buf, ext, filename);
-  } catch (err) {
-    await joplin.views.dialogs.showMessageBox(
-      `Conversion failed: ${(err as Error).message}`,
-    );
-    return;
-  }
+	let converted;
+	try {
+		converted = await convertToMarkdown(buf, ext, filename);
+	} catch (err) {
+		await joplin.views.dialogs.showMessageBox(`Conversion failed: ${(err as Error).message}`);
+		return;
+	}
 
-  const title = converted.title.trim() || filename.replace(/\.[^.]+$/, '') || 'Imported Note';
+	const title = converted.title.trim() || filename.replace(/\.[^.]+$/, '') || 'Imported Note';
 
-  let parentId: string | undefined;
-  try {
-    const note = await joplin.workspace.selectedNote();
-    parentId = note?.parent_id as string | undefined;
-  } catch (_) {}
+	let parentId: string | undefined;
+	try {
+		const note = await joplin.workspace.selectedNote();
+		parentId = note?.parent_id as string | undefined;
+	} catch (_) {}
 
-  await joplin.data.post(['notes'], null, {
-    title,
-    body: converted.markdown,
-    ...(parentId ? { parent_id: parentId } : {}),
-  });
+	await joplin.data.post(['notes'], null, {
+		title,
+		body: converted.markdown,
+		...(parentId ? { parent_id: parentId } : {}),
+	});
 }
