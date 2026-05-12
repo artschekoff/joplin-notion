@@ -549,23 +549,82 @@
           } catch (_) {}
         };
 
-        // ── Pending d+motion (de, dw, db, d$, d0, dh, dl) ─────────────────
-        if (vimBlockPending === 'd' && !vimBlockVisual) {
+        // Yank text spanned by a motion to clipboard, restore cursor
+        const yankMotion = (motionDir, motionGran) => {
+          if (!sel || !sel.focusNode) return;
+          const sn = sel.focusNode, so = sel.focusOffset;
+          sel.collapse(sn, so);
+          sel.modify('move', motionDir, motionGran);
+          const en = sel.focusNode, eo = sel.focusOffset;
+          if (!en) return;
+          try {
+            const r = document.createRange();
+            if (motionDir === 'forward') { r.setStart(sn, so); r.setEnd(en, eo); }
+            else                         { r.setStart(en, eo); r.setEnd(sn, so); }
+            const text = r.toString();
+            if (text) navigator.clipboard?.writeText(text).catch(() => {});
+          } catch (_) {}
+          sel.collapse(sn, so); // restore cursor
+        };
+
+        // ── Pending operator + motion ───────────────────────────────────────
+        const pendingOp = vimBlockPending;
+        if (pendingOp && !vimBlockVisual) {
           clearTimeout(vimBlockPendingTimer);
           vimBlockPending = null;
-          if (key === 'e' || key === 'w' || key === 'W') { deleteMotion('forward',  'word');         return; }
-          if (key === 'b' || key === 'B')                { deleteMotion('backward', 'word');         return; }
-          if (key === '$')                               { deleteMotion('forward',  'lineboundary'); return; }
-          if (key === '0')                               { deleteMotion('backward', 'lineboundary'); return; }
-          if (key === 'h' || e.key === 'ArrowLeft')      { deleteMotion('backward', 'character');    return; }
-          if (key === 'l' || e.key === 'ArrowRight')     { deleteMotion('forward',  'character');    return; }
-          if (key === 'd') {
-            // dd: delete entire line content
-            move('backward', 'lineboundary');
-            deleteMotion('forward', 'lineboundary');
+
+          // r{char}: replace char under cursor (pending stores 'r', next key is the char)
+          if (pendingOp === 'r') {
+            const ch = e.key.length === 1 ? e.key : null;
+            if (ch && sel?.focusNode) {
+              const sn = sel.focusNode, so = sel.focusOffset;
+              sel.collapse(sn, so);
+              sel.modify('move', 'forward', 'character');
+              const en = sel.focusNode, eo = sel.focusOffset;
+              if (en && (en !== sn || eo !== so)) {
+                try {
+                  const r = document.createRange();
+                  r.setStart(sn, so); r.setEnd(en, eo);
+                  if (!r.collapsed) {
+                    r.deleteContents();
+                    const tn = document.createTextNode(ch);
+                    r.insertNode(tn);
+                    sel.collapse(tn, 1);
+                    scheduleSave();
+                  }
+                } catch (_) {}
+              }
+            }
             return;
           }
-          return; // unknown motion: ignore
+
+          // Motion helpers shared by d, c, y
+          const applyMotion = (motionDir, motionGran) => {
+            if      (pendingOp === 'd') { deleteMotion(motionDir, motionGran); }
+            else if (pendingOp === 'c') { deleteMotion(motionDir, motionGran); vimMode = 'insert'; updateVimUI(); }
+            else if (pendingOp === 'y') { yankMotion(motionDir, motionGran); }
+          };
+
+          if (key === 'e' || key === 'w' || key === 'W') { applyMotion('forward',  'word');         return; }
+          if (key === 'b' || key === 'B')                { applyMotion('backward', 'word');         return; }
+          if (key === '$')                               { applyMotion('forward',  'lineboundary'); return; }
+          if (key === '0')                               { applyMotion('backward', 'lineboundary'); return; }
+          if (key === 'h' || e.key === 'ArrowLeft')      { applyMotion('backward', 'character');    return; }
+          if (key === 'l' || e.key === 'ArrowRight')     { applyMotion('forward',  'character');    return; }
+
+          // dd / cc / yy — whole line
+          if (key === pendingOp) {
+            move('backward', 'lineboundary');
+            if (pendingOp === 'd') { deleteMotion('forward', 'lineboundary'); }
+            else if (pendingOp === 'c') {
+              deleteMotion('forward', 'lineboundary');
+              vimMode = 'insert'; updateVimUI();
+            } else if (pendingOp === 'y') {
+              yankMotion('forward', 'lineboundary');
+            }
+            return;
+          }
+          return; // unknown motion
         }
 
         // ── Visual mode toggle ──────────────────────────────────────────────
@@ -620,22 +679,105 @@
             updateVimUI();
             return;
           }
+          if (key === 'c') {
+            // Cut selection and enter insert mode at deletion point
+            const r = _buildVisualRange();
+            if (r && !r.collapsed) { r.deleteContents(); scheduleSave(); }
+            clearVisual();
+            vimMode = 'insert';
+            updateVimUI();
+            return;
+          }
         }
 
-        // ── Enter insert mode ───────────────────────────────────────────────
+        // ── Enter / exit insert mode ────────────────────────────────────────
         if (key === 'i') { clearVisual(); vimMode = 'insert'; updateVimUI(); return; }
         if (key === 'a') { move('forward', 'character'); clearVisual(); vimMode = 'insert'; updateVimUI(); return; }
         if (key === 'I') { move('backward', 'lineboundary'); clearVisual(); vimMode = 'insert'; updateVimUI(); return; }
         if (key === 'A') { move('forward',  'lineboundary'); clearVisual(); vimMode = 'insert'; updateVimUI(); return; }
+        // o/O: open new line below/above — place cursor at line end/start and insert
+        if (key === 'o') { move('forward',  'lineboundary'); clearVisual(); vimMode = 'insert'; updateVimUI(); return; }
+        if (key === 'O') { move('backward', 'lineboundary'); clearVisual(); vimMode = 'insert'; updateVimUI(); return; }
 
-        // ── Single-char delete (non-visual) ────────────────────────────────
-        if (key === 'x') { deleteMotion('forward', 'character'); return; }
-
-        // ── Operator pending (d waits for motion) ───────────────────────────
-        if (key === 'd' && !vimBlockVisual) {
-          vimBlockPending = 'd';
-          vimBlockPendingTimer = setTimeout(() => { vimBlockPending = null; }, VIM_PENDING_MS);
+        // ── Undo ────────────────────────────────────────────────────────────
+        if (key === 'u') {
+          await captureSnapshot();
+          await performUndo();
+          // editor.render() replaces all DOM nodes — restore focus so subsequent
+          // keypresses (including Esc) pass the container guard check.
+          try {
+            vimIndex = clampIndex(vimIndex);
+            editor.caret.setToBlock(vimIndex, 'start');
+          } catch (_) {
+            container.focus();
+            vimMode = 'normal';
+            updateVimUI();
+          }
           return;
+        }
+
+        // ── Single-key edits (non-visual) ──────────────────────────────────
+        if (key === 'x') { deleteMotion('forward',  'character'); return; }
+        if (key === 'X') { deleteMotion('backward', 'character'); return; }
+        // s: substitute char (delete char + insert)
+        if (key === 's') { deleteMotion('forward', 'character'); vimMode = 'insert'; updateVimUI(); return; }
+        // S: substitute line (delete line + insert)
+        if (key === 'S') { move('backward', 'lineboundary'); deleteMotion('forward', 'lineboundary'); vimMode = 'insert'; updateVimUI(); return; }
+        // C: change to end of line
+        if (key === 'C') { deleteMotion('forward', 'lineboundary'); vimMode = 'insert'; updateVimUI(); return; }
+
+        // ── Toggle case ─────────────────────────────────────────────────────
+        if (key === '~') {
+          if (sel?.focusNode) {
+            const sn = sel.focusNode, so = sel.focusOffset;
+            sel.collapse(sn, so);
+            sel.modify('move', 'forward', 'character');
+            const en = sel.focusNode, eo = sel.focusOffset;
+            if (en && (en !== sn || eo !== so)) {
+              try {
+                const r = document.createRange();
+                r.setStart(sn, so); r.setEnd(en, eo);
+                if (!r.collapsed) {
+                  const ch = r.toString();
+                  r.deleteContents();
+                  const tn = document.createTextNode(ch === ch.toUpperCase() ? ch.toLowerCase() : ch.toUpperCase());
+                  r.insertNode(tn);
+                  sel.collapse(tn, tn.length);
+                  scheduleSave();
+                }
+              } catch (_) {}
+            }
+          }
+          return;
+        }
+
+        // ── Paste from clipboard ────────────────────────────────────────────
+        if (key === 'p' || key === 'P') {
+          navigator.clipboard?.readText().then(text => {
+            if (!text) return;
+            const s2 = window.getSelection();
+            if (!s2 || !s2.focusNode) return;
+            if (key === 'p') s2.modify('move', 'forward', 'character'); // paste after cursor
+            try {
+              const r = document.createRange();
+              r.setStart(s2.focusNode, s2.focusOffset);
+              r.collapse(true);
+              const tn = document.createTextNode(text);
+              r.insertNode(tn);
+              s2.collapse(tn, tn.length);
+              scheduleSave();
+            } catch (_) {}
+          }).catch(() => {});
+          return;
+        }
+
+        // ── Operator pending (d / c / y / r wait for motion or char) ───────
+        if (!vimBlockVisual) {
+          if (key === 'd' || key === 'c' || key === 'y' || key === 'r') {
+            vimBlockPending = key;
+            vimBlockPendingTimer = setTimeout(() => { vimBlockPending = null; }, VIM_PENDING_MS);
+            return;
+          }
         }
 
         // All other keys: silently consumed — block mode blocks text input

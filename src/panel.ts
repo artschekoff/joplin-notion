@@ -3,6 +3,7 @@ import joplin from 'api';
 let panelHandle: string | null = null;
 let panelVisible = false;
 let isSavingFromPanel = false;
+let lastSavedBody: string | null = null;
 
 const PANEL_HTML = `<!DOCTYPE html>
 <html>
@@ -81,6 +82,7 @@ export const initPanel = async (): Promise<void> => {
 			const { noteId, markdown } = message as { noteId: unknown; markdown: unknown };
 			if (typeof noteId === 'string' && noteId && typeof markdown === 'string') {
 				isSavingFromPanel = true;
+				lastSavedBody = markdown;
 				try {
 					await joplin.data.put(['notes', noteId], null, { body: markdown });
 				} catch (saveErr) {
@@ -95,7 +97,8 @@ export const initPanel = async (): Promise<void> => {
 				} finally {
 					setTimeout(() => {
 						isSavingFromPanel = false;
-					}, 2000);
+						lastSavedBody = null;
+					}, 500);
 				}
 			}
 			return;
@@ -135,9 +138,13 @@ export const initPanel = async (): Promise<void> => {
 	});
 
 	await joplin.workspace.onNoteChange(async () => {
-		if (panelHandle && panelVisible && !isSavingFromPanel) {
-			await sendNoteLoaded();
+		if (!panelHandle || !panelVisible) return;
+		if (isSavingFromPanel) {
+			const note = await getCurrentNote();
+			const norm = (s: string) => s.replace(/\r\n/g, '\n').trimEnd();
+			if (note && lastSavedBody !== null && norm(note.body) === norm(lastSavedBody)) return;
 		}
+		await sendNoteLoaded();
 	});
 };
 
