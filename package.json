@@ -1,6 +1,6 @@
 {
   "name": "net.roxl.joplin-notion",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "scripts": {
     "dist": "webpack --env joplin-plugin-config=buildMain && webpack --env joplin-plugin-config=buildExtraScripts && webpack --env joplin-plugin-config=createArchive",
     "prepare": "husky && npm run dist",
@@ -13,7 +13,8 @@
     "format:check": "prettier --check 'src/**/*.ts'",
     "format": "prettier --write 'src/**/*.ts'",
     "security:audit:prod": "snyk test --severity-threshold=medium --production",
-    "validate": "npm run format:check && npm run lint && npm test"
+    "validate": "npm run format:check && npm run lint && npm test",
+    "publish": "npm run dist"
   },
   "license": "MIT",
   "keywords": [
