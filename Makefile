@@ -1,7 +1,7 @@
 PLUGIN  := net.roxl.joplin-notion
 PUBLISH := publish
 
-.PHONY: build test lint clean release
+.PHONY: build test lint snyk clean release
 
 build:
 	npm run dist
@@ -11,6 +11,9 @@ test:
 
 lint:
 	npm run lint
+
+snyk:
+	npm run security:audit:prod
 
 clean:
 	rm -rf $(PUBLISH)
