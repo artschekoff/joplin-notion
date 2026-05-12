@@ -1,0 +1,12 @@
+# Snyk (https://snyk.io) policy file
+# Ignores known upstream vulnerabilities in @joplin/utils transitive deps.
+# Review and remove entries once upstream publishes a fix.
+version: v1.25.0
+ignore:
+  SNYK-JS-MARKDOWNIT-10666750:
+    - '@joplin/utils > markdown-it':
+        reason: >-
+          Transitive dep of @joplin/utils@3.5.1 — fix requires breaking major
+          upgrade. ReDoS risk is low for trusted note content.
+        expires: 2026-10-11T00:00:00.000Z
+        created: 2026-05-11T00:00:00.000Z
