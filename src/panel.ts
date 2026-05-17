@@ -119,10 +119,12 @@ export const initPanel = async (): Promise<void> => {
 
 		if (message.type === 'askAI') {
 			const text = typeof message.text === 'string' ? message.text : '';
+			const prompt = typeof message.prompt === 'string' ? message.prompt : '';
+			const isSelection = message.isSelection === true;
 			try {
 				await joplin.settings.setValue(
 					'notion.askAI.request',
-					JSON.stringify({ text, ts: Date.now() }),
+					JSON.stringify({ text, prompt, isSelection, ts: Date.now() }),
 				);
 			} catch (err) {
 				console.error('askAI bridge write failed:', err);
@@ -145,6 +147,22 @@ export const initPanel = async (): Promise<void> => {
 			if (note && lastSavedBody !== null && norm(note.body) === norm(lastSavedBody)) return;
 		}
 		await sendNoteLoaded();
+	});
+
+	await joplin.settings.onChange(async () => {
+		try {
+			if (!panelHandle || !panelVisible) return;
+			const raw = await joplin.settings.globalValue('notion.askAI.error');
+			if (!raw) return;
+			const parsed = JSON.parse(raw as string) as { message?: string; ts?: number };
+			if (!parsed.message || !parsed.ts) return;
+			await joplin.views.panels.postMessage(panelHandle, {
+				type: 'askAIError',
+				message: parsed.message,
+			});
+		} catch {
+			// ignore
+		}
 	});
 };
 
