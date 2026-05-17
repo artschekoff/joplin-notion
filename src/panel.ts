@@ -2,6 +2,7 @@ import joplin from 'api';
 
 let panelHandle: string | null = null;
 let panelVisible = false;
+let lastProcessedErrorTs = 0;
 let isSavingFromPanel = false;
 let lastSavedBody: string | null = null;
 
@@ -156,6 +157,8 @@ export const initPanel = async (): Promise<void> => {
 			if (!raw) return;
 			const parsed = JSON.parse(raw as string) as { message?: string; ts?: number };
 			if (!parsed.message || !parsed.ts) return;
+			if (parsed.ts <= lastProcessedErrorTs) return;
+			lastProcessedErrorTs = parsed.ts;
 			await joplin.views.panels.postMessage(panelHandle, {
 				type: 'askAIError',
 				message: parsed.message,
