@@ -1188,6 +1188,136 @@
     '<line x1="8" y1="16" x2="8" y2="16.01"/>' +
     '<line x1="16" y1="16" x2="16" y2="16.01"/></svg>';
 
+  // ── Ask AI inline popup ──────────────────────────────────────────────────
+  let askAIInflight = false;
+  let askAIPopupEl = null;
+
+  function dismissAskAIPopup() {
+    if (askAIPopupEl) {
+      askAIPopupEl.remove();
+      askAIPopupEl = null;
+    }
+  }
+
+  function clearAskAIInflight() {
+    askAIInflight = false;
+    dismissAskAIPopup();
+  }
+
+  function showAskAIPopup(selectedText) {
+    if (askAIInflight) return;
+    dismissAskAIPopup();
+
+    const blockIndex = (editor && editor.blocks) ? editor.blocks.getCurrentBlockIndex() : -1;
+    const blocks = document.querySelectorAll('#editor-container .ce-block');
+    const anchorBlock = (blockIndex >= 0 && blocks[blockIndex]) ? blocks[blockIndex] : null;
+
+    const popup = document.createElement('div');
+    popup.style.cssText = [
+      'position:absolute',
+      'z-index:9999',
+      'background:#fff',
+      'border:1px solid #d1d5db',
+      'border-radius:6px',
+      'box-shadow:0 4px 12px rgba(0,0,0,0.15)',
+      'padding:8px',
+      'display:flex',
+      'gap:6px',
+      'align-items:center',
+      'min-width:280px',
+    ].join(';');
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = 'What should AI do with this?';
+    input.style.cssText = [
+      'flex:1',
+      'border:1px solid #d1d5db',
+      'border-radius:4px',
+      'padding:4px 8px',
+      'font-size:13px',
+      'outline:none',
+      'min-width:0',
+    ].join(';');
+
+    const runBtn = document.createElement('button');
+    runBtn.textContent = 'Run';
+    runBtn.disabled = true;
+    runBtn.style.cssText = [
+      'background:#2563eb',
+      'color:#fff',
+      'border:none',
+      'border-radius:4px',
+      'padding:4px 12px',
+      'font-size:13px',
+      'cursor:default',
+      'opacity:0.45',
+      'white-space:nowrap',
+      'flex-shrink:0',
+    ].join(';');
+
+    input.addEventListener('input', function () {
+      const ok = input.value.trim().length > 0;
+      runBtn.disabled = !ok;
+      runBtn.style.opacity = ok ? '1' : '0.45';
+      runBtn.style.cursor = ok ? 'pointer' : 'default';
+    });
+
+    function submitPopup() {
+      const prompt = input.value.trim();
+      if (!prompt || askAIInflight) return;
+      askAIInflight = true;
+      runBtn.disabled = true;
+      runBtn.textContent = '…';
+      input.disabled = true;
+      if (typeof window.webviewApi !== 'undefined') {
+        window.webviewApi.postMessage({ type: 'askAI', text: selectedText, prompt: prompt, isSelection: true });
+      }
+    }
+
+    runBtn.addEventListener('click', submitPopup);
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { submitPopup(); return; }
+      if (e.key === 'Escape') { clearAskAIInflight(); }
+    });
+
+    popup.appendChild(input);
+    popup.appendChild(runBtn);
+    askAIPopupEl = popup;
+
+    // Position below the anchor block, relative to editor-container
+    const container = document.getElementById('editor-container');
+    if (container) {
+      container.style.position = 'relative';
+      if (anchorBlock) {
+        const cRect = container.getBoundingClientRect();
+        const bRect = anchorBlock.getBoundingClientRect();
+        popup.style.top = (bRect.bottom - cRect.top + 4) + 'px';
+        popup.style.left = (bRect.left - cRect.left) + 'px';
+      } else {
+        popup.style.top = '8px';
+        popup.style.left = '8px';
+      }
+      container.appendChild(popup);
+    } else {
+      popup.style.position = 'fixed';
+      popup.style.top = '80px';
+      popup.style.left = '50%';
+      popup.style.transform = 'translateX(-50%)';
+      document.body.appendChild(popup);
+    }
+
+    function outsideClickHandler(e) {
+      if (!popup.contains(e.target)) {
+        clearAskAIInflight();
+        document.removeEventListener('mousedown', outsideClickHandler);
+      }
+    }
+    document.addEventListener('mousedown', outsideClickHandler);
+
+    setTimeout(function () { input.focus(); }, 0);
+  }
+
   /**
    * Custom Editor.js inline tool that sends the selected text to the AI
    * chat panel.  Appears in the same toolbar as Bold / Italic / Link.
@@ -1208,11 +1338,9 @@
     }
 
     surround(range) {
-      if (!range) return;
+      if (!range || askAIInflight) return;
       const text = range.toString().trim();
-      if (text && typeof window.webviewApi !== 'undefined') {
-        window.webviewApi.postMessage({ type: 'askAI', text });
-      }
+      if (text) showAskAIPopup(text);
     }
 
     checkState() { return false; }
@@ -1237,6 +1365,7 @@
         '<div class="ce-popover-item__icon">' + ROBOT_SVG + '</div>' +
         '<div class="ce-popover-item__title">Ask AI</div>';
       wrapper.addEventListener('click', async () => {
+        if (askAIInflight) { this._api.toolbar.close(); return; }
         const blockIndex = this._api.blocks.getCurrentBlockIndex();
         let md = '';
         try {
@@ -1251,9 +1380,7 @@
             ? (blockEl.querySelector('.ce-block__content') || blockEl).textContent.trim()
             : '';
         }
-        if (md && typeof window.webviewApi !== 'undefined') {
-          window.webviewApi.postMessage({ type: 'askAI', text: md });
-        }
+        if (md) showAskAIPopup(md);
         this._api.toolbar.close();
       });
       return wrapper;
@@ -1270,8 +1397,33 @@
       const message = event && event.message && event.message.type ? event.message : event;
       if (!message) return;
       if (message.type === 'noteLoaded') {
+        clearAskAIInflight();
         const note = message.note || null;
         if (window.BlockEditor) window.BlockEditor.loadNote(note);
+      }
+      if (message.type === 'askAIError') {
+        clearAskAIInflight();
+        const errMsg = (message.message && typeof message.message === 'string')
+          ? message.message
+          : 'AI patch failed';
+        const toast = document.createElement('div');
+        toast.style.cssText = [
+          'position:fixed',
+          'bottom:16px',
+          'right:16px',
+          'background:#ef4444',
+          'color:#fff',
+          'border-radius:6px',
+          'padding:8px 14px',
+          'font-size:13px',
+          'z-index:99999',
+          'box-shadow:0 2px 8px rgba(0,0,0,0.2)',
+          'max-width:320px',
+          'word-break:break-word',
+        ].join(';');
+        toast.textContent = 'AI error: ' + errMsg;
+        document.body.appendChild(toast);
+        setTimeout(function () { toast.remove(); }, 4000);
       }
     });
   };
