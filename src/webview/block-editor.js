@@ -1191,8 +1191,13 @@
   // ── Ask AI inline popup ──────────────────────────────────────────────────
   let askAIInflight = false;
   let askAIPopupEl = null;
+  let askAIOutsideHandler = null;
 
   function dismissAskAIPopup() {
+    if (askAIOutsideHandler) {
+      document.removeEventListener('mousedown', askAIOutsideHandler);
+      askAIOutsideHandler = null;
+    }
     if (askAIPopupEl) {
       askAIPopupEl.remove();
       askAIPopupEl = null;
@@ -1307,13 +1312,12 @@
       document.body.appendChild(popup);
     }
 
-    function outsideClickHandler(e) {
+    askAIOutsideHandler = function (e) {
       if (!popup.contains(e.target)) {
         clearAskAIInflight();
-        document.removeEventListener('mousedown', outsideClickHandler);
       }
-    }
-    document.addEventListener('mousedown', outsideClickHandler);
+    };
+    document.addEventListener('mousedown', askAIOutsideHandler);
 
     setTimeout(function () { input.focus(); }, 0);
   }
