@@ -10,3 +10,11 @@ ignore:
           upgrade. ReDoS risk is low for trusted note content.
         expires: 2026-10-11T00:00:00.000Z
         created: 2026-05-11T00:00:00.000Z
+  SNYK-JS-BRACEEXPANSION-16755174:
+    - '@joplin/utils > glob > minimatch > brace-expansion':
+        reason: >-
+          Transitive dep of @joplin/utils@3.5.1 — cannot upgrade without
+          bumping @joplin/utils itself. DoS risk is negligible for local
+          plugin use (no untrusted glob patterns from external input).
+        expires: 2026-11-20T00:00:00.000Z
+        created: 2026-05-20T00:00:00.000Z
