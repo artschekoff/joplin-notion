@@ -3,6 +3,10 @@ import joplin from 'api';
 let panelHandle: string | null = null;
 let panelVisible = false;
 let lastProcessedErrorTs = 0;
+
+// Joplin stores plugin settings under plugin-${pluginId}.${key} internally.
+// globalValue() reads keys as-is (no prefix), so we must pass the full key.
+const AI_ASSISTANT_ERROR_KEY = 'plugin-net.roxl.joplin-ai.notion.askAI.error';
 let isSavingFromPanel = false;
 let lastSavedBody: string | null = null;
 
@@ -122,11 +126,13 @@ export const initPanel = async (): Promise<void> => {
 			const text = typeof message.text === 'string' ? message.text : '';
 			const prompt = typeof message.prompt === 'string' ? message.prompt : '';
 			const isSelection = message.isSelection === true;
+			console.log('[notion-panel] askAI received — text.len:', text.length, 'prompt:', prompt.substring(0, 50));
 			try {
 				await joplin.settings.setValue(
 					'notion.askAI.request',
 					JSON.stringify({ text, prompt, isSelection, ts: Date.now() }),
 				);
+				console.log('[notion-panel] notion.askAI.request written OK');
 			} catch (err) {
 				console.error('askAI bridge write failed:', err);
 			}
@@ -150,10 +156,12 @@ export const initPanel = async (): Promise<void> => {
 		await sendNoteLoaded();
 	});
 
-	await joplin.settings.onChange(async () => {
+	// settings.onChange only fires for this plugin's own settings, so we poll
+	// globalValue to detect errors written by joplin-ai.
+	setInterval(async () => {
 		try {
 			if (!panelHandle || !panelVisible) return;
-			const raw = await joplin.settings.globalValue('notion.askAI.error');
+			const raw = await joplin.settings.globalValue(AI_ASSISTANT_ERROR_KEY);
 			if (!raw) return;
 			const parsed = JSON.parse(raw as string) as { message?: string; ts?: number };
 			if (!parsed.message || !parsed.ts) return;
@@ -166,7 +174,7 @@ export const initPanel = async (): Promise<void> => {
 		} catch {
 			// ignore
 		}
-	});
+	}, 300);
 };
 
 export const toggleBlockEditorPane = async (): Promise<void> => {

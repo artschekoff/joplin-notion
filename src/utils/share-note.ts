@@ -1,3 +1,4 @@
+import * as iconv from 'iconv-lite';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as os from 'os';
@@ -159,6 +160,48 @@ export const exportNoteWithPandoc = async (opts: {
 	return outputPath;
 };
 
+// Codepages pandoc's RTF reader doesn't support — needs pre-conversion to Unicode escapes.
+const RTF_CODEPAGE_ENCODINGS: Record<number, string> = {
+	874: 'windows-874',
+	1250: 'windows-1250',
+	1251: 'windows-1251',
+	1253: 'windows-1253',
+	1254: 'windows-1254',
+	1255: 'windows-1255',
+	1256: 'windows-1256',
+	1257: 'windows-1257',
+	1258: 'windows-1258',
+};
+
+// Rewrites \'XX byte escapes to \uN? RTF Unicode escapes so pandoc handles them correctly.
+export function fixRtfCodepage(buf: Buffer): Buffer {
+	const rtf = buf.toString('latin1');
+	const cpMatch = rtf.match(/\\ansicpg(\d+)/);
+	if (!cpMatch) return buf;
+
+	const codepage = parseInt(cpMatch[1], 10);
+	const encoding = RTF_CODEPAGE_ENCODINGS[codepage];
+	if (!encoding) return buf;
+
+	const byteMap = new Map<number, number>();
+	for (let b = 0x80; b <= 0xff; b++) {
+		const cp = iconv.decode(Buffer.from([b]), encoding).codePointAt(0);
+		if (cp !== undefined) byteMap.set(b, cp);
+	}
+
+	const fixed = rtf.replace(/\\'([0-9a-fA-F]{2})/g, (match, hex) => {
+		const b = parseInt(hex, 16);
+		if (b < 0x80) return match;
+		const unicode = byteMap.get(b);
+		if (unicode === undefined) return match;
+		// RTF unicode value is signed 16-bit; chars above U+7FFF use two's complement
+		const rtfN = unicode > 32767 ? unicode - 65536 : unicode;
+		return `\\u${rtfN}?`;
+	});
+
+	return Buffer.from(fixed.replace(/\\ansicpg\d+/, '\\ansicpg1252'), 'latin1');
+}
+
 /**
  * Imports a document (DOCX, RTF, or MD) to Markdown via pandoc.
  * Writes content to a temp file, runs pandoc -t markdown, returns the result.
@@ -173,8 +216,9 @@ export const importNoteWithPandoc = async (opts: {
 	const base = sanitizeFilename(opts.filename.replace(/\.[^.]+$/, '') || 'import');
 	const inputPath = path.join(tmpDir, `${base}-import.${opts.format}`);
 	const outputPath = path.join(tmpDir, `${base}-import-out.md`);
-	await fs.promises.writeFile(inputPath, opts.content);
-	await execFileAsync('pandoc', [inputPath, '-t', 'markdown', '--wrap=none', '-o', outputPath]);
+	const content = opts.format === 'rtf' ? fixRtfCodepage(opts.content) : opts.content;
+	await fs.promises.writeFile(inputPath, content);
+	await execFileAsync('pandoc', [inputPath, '-t', 'gfm', '--wrap=none', '-o', outputPath]);
 	const markdown = await fs.promises.readFile(outputPath, 'utf-8');
 	await Promise.allSettled([fs.promises.unlink(inputPath), fs.promises.unlink(outputPath)]);
 	return markdown;
