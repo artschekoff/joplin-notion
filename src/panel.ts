@@ -126,7 +126,12 @@ export const initPanel = async (): Promise<void> => {
 			const text = typeof message.text === 'string' ? message.text : '';
 			const prompt = typeof message.prompt === 'string' ? message.prompt : '';
 			const isSelection = message.isSelection === true;
-			console.log('[notion-panel] askAI received — text.len:', text.length, 'prompt:', prompt.substring(0, 50));
+			console.log(
+				'[notion-panel] askAI received — text.len:',
+				text.length,
+				'prompt:',
+				prompt.substring(0, 50),
+			);
 			try {
 				await joplin.settings.setValue(
 					'notion.askAI.request',
