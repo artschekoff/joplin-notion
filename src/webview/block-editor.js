@@ -68,6 +68,10 @@
     clearTimeout(saveTimer);
     saveTimer = setTimeout(async () => {
       if (!editor || !currentNoteId) return;
+      // Don't overwrite the note while an AI patch is in-flight — the patch
+      // hasn't landed yet and saving now would clobber it, causing onNoteChange
+      // to return stale content to sendNoteLoaded().
+      if (askAIInflight) return;
       try {
         const out = await editor.save();
         const md = window.MarkdownConverter.blocksToMarkdown(out.blocks);
@@ -499,6 +503,8 @@
       // Block mode: in-block vim navigation (contenteditable stays focused).
       // Selection.modify() is available in all Chromium/Electron environments.
       if (vimMode === 'block') {
+        // Let system shortcuts (Ctrl+C copy, Ctrl+A select-all, etc.) pass through.
+        if (e.ctrlKey || e.metaKey) return;
         e.preventDefault();
         e.stopImmediatePropagation(); // prevent EditorJS handlers from reacting
         const key = getVimKey(e);
@@ -1207,6 +1213,10 @@
   function clearAskAIInflight() {
     askAIInflight = false;
     dismissAskAIPopup();
+    // Ensure any edits made before the popup opened are persisted if the user
+    // dismissed without submitting (on AI success, loadNote → editor.render →
+    // onChange will start a fresh timer and this one gets cancelled).
+    scheduleSave();
   }
 
   function showAskAIPopup(selectedText) {
@@ -1275,8 +1285,12 @@
       runBtn.disabled = true;
       runBtn.textContent = '…';
       input.disabled = true;
+      console.log('[block-editor] submitPopup — webviewApi:', typeof window.webviewApi, 'text.len:', selectedText?.length, 'prompt:', prompt.substring(0, 50));
       if (typeof window.webviewApi !== 'undefined') {
         window.webviewApi.postMessage({ type: 'askAI', text: selectedText, prompt: prompt, isSelection: true });
+        console.log('[block-editor] postMessage sent');
+      } else {
+        console.error('[block-editor] webviewApi is undefined — postMessage NOT sent');
       }
     }
 
