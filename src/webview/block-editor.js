@@ -1548,6 +1548,28 @@
         document.body.appendChild(toast);
         setTimeout(function () { toast.remove(); }, 4000);
       }
+      if (message.type === 'resourceInserted') {
+        const { uploadId, resourceId, title, mimeType } = message;
+        const cb = _pendingUploads.get(uploadId);
+        if (cb) {
+          cb({ resourceId, title, mimeType });
+          _pendingUploads.delete(uploadId);
+        }
+      }
+      if (message.type === 'resourceInsertError') {
+        const { uploadId } = message;
+        _pendingUploads.delete(uploadId);
+        const toast = document.createElement('div');
+        toast.style.cssText = [
+          'position:fixed', 'bottom:16px', 'right:16px',
+          'background:#ef4444', 'color:#fff', 'border-radius:6px',
+          'padding:8px 14px', 'font-size:13px', 'z-index:99999',
+          'box-shadow:0 2px 8px rgba(0,0,0,0.2)', 'max-width:320px', 'word-break:break-word',
+        ].join(';');
+        toast.textContent = 'Upload failed: ' + (message.message || 'unknown error');
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 4000);
+      }
     });
   };
 
