@@ -331,6 +331,18 @@ const blocksToMarkdown = (blocks) => {
 				parts.push('---');
 				break;
 
+			case 'image':
+				if (d.resourceId) {
+					parts.push('![' + (d.title || '') + '](:/'+  d.resourceId + ')');
+				}
+				break;
+
+			case 'file':
+				if (d.resourceId) {
+					parts.push('[' + (d.title || '') + '](:/'+  d.resourceId + ')');
+				}
+				break;
+
 			default:
 				// Unknown block type — try to extract any text content
 				if (d.text) parts.push(htmlInlineToMd(d.text));

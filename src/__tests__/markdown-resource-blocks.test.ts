@@ -46,3 +46,41 @@ describe('markdownToBlocks — file resource lines', () => {
 		expect(blocks[0].type).not.toBe('file');
 	});
 });
+
+describe('blocksToMarkdown — image blocks', () => {
+	it('serializes an image block to Joplin image markdown', () => {
+		const md = blocksToMarkdown([{ type: 'image', data: { resourceId: 'abc123', title: 'photo.png' } }]);
+		expect(md).toBe('![photo.png](:/abc123)');
+	});
+
+	it('handles empty title', () => {
+		const md = blocksToMarkdown([{ type: 'image', data: { resourceId: 'abc123', title: '' } }]);
+		expect(md).toBe('![](:/abc123)');
+	});
+
+	it('omits image block with no resourceId', () => {
+		const md = blocksToMarkdown([{ type: 'image', data: { resourceId: '', title: 'broken' } }]);
+		expect(md).toBe('');
+	});
+});
+
+describe('blocksToMarkdown — file blocks', () => {
+	it('serializes a file block to Joplin file link markdown', () => {
+		const md = blocksToMarkdown([{ type: 'file', data: { resourceId: 'def456', title: 'report.pdf' } }]);
+		expect(md).toBe('[report.pdf](:/def456)');
+	});
+
+	it('round-trips image block through markdown converter', () => {
+		const original = '![photo.jpg](:/abc123def456)';
+		const blocks = markdownToBlocks(original);
+		const result = blocksToMarkdown(blocks);
+		expect(result).toBe(original);
+	});
+
+	it('round-trips file block through markdown converter', () => {
+		const original = '[document.pdf](:/deadbeef1234)';
+		const blocks = markdownToBlocks(original);
+		const result = blocksToMarkdown(blocks);
+		expect(result).toBe(original);
+	});
+});
