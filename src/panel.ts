@@ -2,7 +2,7 @@ import joplin from 'api';
 
 let panelHandle: string | null = null;
 let panelVisible = false;
-let lastProcessedErrorTs = 0;
+let lastProcessedErrorTs = Date.now();
 
 // Joplin stores plugin settings under plugin-${pluginId}.${key} internally.
 // globalValue() reads keys as-is (no prefix), so we must pass the full key.

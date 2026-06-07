@@ -22,6 +22,8 @@ release:
 	@set -e; \
 	current=$$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0"); \
 	echo "Current version: $$current"; \
+	commits=$$(git rev-list $$current..HEAD --count 2>/dev/null || echo "0"); \
+	if [ "$$commits" -eq 0 ]; then echo "No changes since $$current. Aborting."; exit 1; fi; \
 	printf "Bump type? [major/minor/patch] (default: patch): "; \
 	read bump; \
 	bump=$${bump:-patch}; \
@@ -37,7 +39,8 @@ release:
 	new="v$${major}.$${minor}.$${patch}"; \
 	echo "Tagging and releasing $$new..."; \
 	npm version --no-git-tag-version $${new#v}; \
-	git add package.json; \
+	jq --arg v "$${new#v}" '.version = $$v' src/manifest.json > src/manifest.json.tmp && mv src/manifest.json.tmp src/manifest.json; \
+	git add package.json src/manifest.json; \
 	git commit -m "chore: bump version to $$new"; \
 	git tag $$new; \
 	git push origin master $$new; \
