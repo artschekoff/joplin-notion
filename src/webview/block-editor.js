@@ -1235,6 +1235,22 @@
           if (!file) return;
           if (this._wrapper) this._wrapper.textContent = 'Uploading…';
 
+          const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // 50 MB
+          if (file.size > MAX_UPLOAD_BYTES) {
+            if (this._wrapper) this._renderPicker();
+            const toast = document.createElement('div');
+            toast.style.cssText = [
+              'position:fixed', 'bottom:16px', 'right:16px',
+              'background:#ef4444', 'color:#fff', 'border-radius:6px',
+              'padding:8px 14px', 'font-size:13px', 'z-index:99999',
+              'box-shadow:0 2px 8px rgba(0,0,0,0.2)', 'max-width:320px', 'word-break:break-word',
+            ].join(';');
+            toast.textContent = 'File too large (max 50 MB)';
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 4000);
+            return;
+          }
+
           const arrayBuffer = await file.arrayBuffer();
           const bytes = new Uint8Array(arrayBuffer);
           let binary = '';
@@ -1245,20 +1261,23 @@
           const dataBase64 = btoa(binary);
           const uploadId = _nextUploadId++;
 
+          if (typeof window.webviewApi === 'undefined') {
+            if (this._wrapper) this._renderPicker();
+            return;
+          }
+
           _pendingUploads.set(uploadId, (result) => {
             this._data = { resourceId: result.resourceId, title: result.title };
             this._renderLoaded();
           });
 
-          if (typeof window.webviewApi !== 'undefined') {
-            window.webviewApi.postMessage({
-              type: 'insertResource',
-              uploadId,
-              dataBase64,
-              filename: file.name,
-              mimeType: file.type,
-            });
-          }
+          window.webviewApi.postMessage({
+            type: 'insertResource',
+            uploadId,
+            dataBase64,
+            filename: file.name,
+            mimeType: file.type,
+          });
         });
         input.click();
       }

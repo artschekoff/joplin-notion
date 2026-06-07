@@ -333,13 +333,13 @@ const blocksToMarkdown = (blocks) => {
 
 			case 'image':
 				if (d.resourceId) {
-					parts.push('![' + (d.title || '') + '](:/'+  d.resourceId + ')');
+					parts.push(`![${d.title || ''}](:/${d.resourceId})`);
 				}
 				break;
 
 			case 'file':
 				if (d.resourceId) {
-					parts.push('[' + (d.title || '') + '](:/'+  d.resourceId + ')');
+					parts.push(`[${d.title || ''}](:/${d.resourceId})`);
 				}
 				break;
 

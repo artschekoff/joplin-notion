@@ -65,17 +65,22 @@ export async function handleInsertResource(
 	mimeType: string,
 ): Promise<{ resourceId: string; title: string; mimeType: string }> {
 	const buffer = Buffer.from(dataBase64, 'base64');
-	const tmpPath = path.join(os.tmpdir(), `joplin-plugin-res-${Date.now()}-${filename}`);
+	const safeName = path.basename(filename);
+	const tmpPath = path.join(os.tmpdir(), `joplin-plugin-res-${Date.now()}-${safeName}`);
 	try {
 		fs.writeFileSync(tmpPath, buffer);
-		const result = await joplin.data.post(['resources'], null, { title: filename }, [{ path: tmpPath }]);
+		const result = await joplin.data.post(['resources'], null, { title: safeName }, [
+			{ path: tmpPath },
+		]);
 		return {
 			resourceId: result.id as string,
-			title: (result.title as string) || filename,
+			title: (result.title as string) || safeName,
 			mimeType: (result.mime as string) || mimeType,
 		};
 	} finally {
-		try { fs.unlinkSync(tmpPath); } catch (_) {}
+		try {
+			fs.unlinkSync(tmpPath);
+		} catch (_) {}
 	}
 }
 
