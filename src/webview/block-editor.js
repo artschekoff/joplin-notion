@@ -23,6 +23,10 @@
 
   // ── Vim state ──────────────────────────────────────────────────────────────
 
+  // ── Resource upload registry ──────────────────────────────────────────────
+  const _pendingUploads = new Map();
+  let _nextUploadId = 1;
+
   /** @type {'insert'|'block'|'normal'} */
   let vimMode = 'insert';
   let vimIndex = 0;          // currently selected block in normal mode
@@ -679,16 +683,13 @@
             return;
           }
           if (key === 'd' || key === 'x') {
-            const r = _buildVisualRange();
-            if (r && !r.collapsed) { r.deleteContents(); scheduleSave(); }
+            try { const r = _buildVisualRange(); if (r && !r.collapsed) { r.deleteContents(); scheduleSave(); } } catch (_) {}
             clearVisual();
             updateVimUI();
             return;
           }
           if (key === 'c') {
-            // Cut selection and enter insert mode at deletion point
-            const r = _buildVisualRange();
-            if (r && !r.collapsed) { r.deleteContents(); scheduleSave(); }
+            try { const r = _buildVisualRange(); if (r && !r.collapsed) { r.deleteContents(); scheduleSave(); } } catch (_) {}
             clearVisual();
             vimMode = 'insert';
             updateVimUI();
@@ -824,6 +825,8 @@
     tools.table = { class: SimpleTableTool, inlineToolbar: true };
     tools.askAI = { class: AskAIInlineTool };
     tools.askAITune = { class: AskAIBlockTune };
+    tools.image = { class: JoplinImageTool };
+    tools.file  = { class: JoplinFileTool };
 
     // Register vim keydown listener BEFORE new EditorJS() so our document-capture
     // handler fires before EditorJS's (registration order determines capture order).
@@ -1183,6 +1186,108 @@
 
     static get isReadOnlySupported() { return true; }
   }
+
+  // ── Joplin resource block tools (Image + File) ────────────────────────────
+
+  function _makeResourceTool(cfg) {
+    return class {
+      static get toolbox() { return { title: cfg.title, icon: cfg.icon }; }
+
+      constructor({ data }) {
+        this._data = { resourceId: (data && data.resourceId) || '', title: (data && data.title) || '' };
+        this._wrapper = null;
+      }
+
+      render() {
+        this._wrapper = document.createElement('div');
+        this._wrapper.className = 'be-resource-block be-' + cfg.blockType + '-block';
+        if (this._data.resourceId) {
+          this._renderLoaded();
+        } else {
+          this._renderPicker();
+        }
+        return this._wrapper;
+      }
+
+      _renderPicker() {
+        const btn = document.createElement('div');
+        btn.className = 'be-resource-picker';
+        btn.textContent = cfg.pickerLabel;
+        btn.addEventListener('click', () => this._upload());
+        this._wrapper.innerHTML = '';
+        this._wrapper.appendChild(btn);
+      }
+
+      _renderLoaded() {
+        this._wrapper.innerHTML = '';
+        const label = document.createElement('div');
+        label.className = 'be-resource-loaded';
+        label.textContent = cfg.loadedIcon + ' ' + (this._data.title || cfg.blockType);
+        this._wrapper.appendChild(label);
+      }
+
+      _upload() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = cfg.accept;
+        input.addEventListener('change', async () => {
+          const file = input.files && input.files[0];
+          if (!file) return;
+          if (this._wrapper) this._wrapper.textContent = 'Uploading…';
+
+          const arrayBuffer = await file.arrayBuffer();
+          const bytes = new Uint8Array(arrayBuffer);
+          let binary = '';
+          const CHUNK = 8192;
+          for (let i = 0; i < bytes.length; i += CHUNK) {
+            binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+          }
+          const dataBase64 = btoa(binary);
+          const uploadId = _nextUploadId++;
+
+          _pendingUploads.set(uploadId, (result) => {
+            this._data = { resourceId: result.resourceId, title: result.title };
+            this._renderLoaded();
+          });
+
+          if (typeof window.webviewApi !== 'undefined') {
+            window.webviewApi.postMessage({
+              type: 'insertResource',
+              uploadId,
+              dataBase64,
+              filename: file.name,
+              mimeType: file.type,
+            });
+          }
+        });
+        input.click();
+      }
+
+      save() { return { resourceId: this._data.resourceId, title: this._data.title }; }
+      static get isReadOnlySupported() { return true; }
+    };
+  }
+
+  const IMAGE_ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
+  const FILE_ICON  = '<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>';
+
+  const JoplinImageTool = _makeResourceTool({
+    blockType: 'image',
+    title: 'Image',
+    icon: IMAGE_ICON,
+    accept: 'image/*',
+    pickerLabel: '🖼️ Click to select image…',
+    loadedIcon: '🖼️',
+  });
+
+  const JoplinFileTool = _makeResourceTool({
+    blockType: 'file',
+    title: 'File',
+    icon: FILE_ICON,
+    accept: '*/*',
+    pickerLabel: '📎 Click to attach file…',
+    loadedIcon: '📎',
+  });
 
   // ── "Ask AI" Editor.js inline tool ──────────────────────────────────────
 
