@@ -328,4 +328,9 @@ const blocksToMarkdown = (blocks) => {
 };
 
 // ── Expose globally ───────────────────────────────────────────────────────
-window.MarkdownConverter = { markdownToBlocks, blocksToMarkdown };
+if (typeof window !== 'undefined') {
+	window.MarkdownConverter = { markdownToBlocks, blocksToMarkdown };
+}
+if (typeof module !== 'undefined' && module.exports) {
+	module.exports = { markdownToBlocks, blocksToMarkdown };
+}
