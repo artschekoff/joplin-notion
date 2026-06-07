@@ -1,4 +1,7 @@
 import joplin from 'api';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 
 let panelHandle: string | null = null;
 let panelVisible = false;
@@ -55,6 +58,26 @@ const sendNoteLoaded = async () => {
 		note: { id: note.id, title: note.title, body: note.body },
 	});
 };
+
+export async function handleInsertResource(
+	dataBase64: string,
+	filename: string,
+	mimeType: string,
+): Promise<{ resourceId: string; title: string; mimeType: string }> {
+	const buffer = Buffer.from(dataBase64, 'base64');
+	const tmpPath = path.join(os.tmpdir(), `joplin-plugin-res-${Date.now()}-${filename}`);
+	try {
+		fs.writeFileSync(tmpPath, buffer);
+		const result = await joplin.data.post(['resources'], null, { title: filename }, [{ path: tmpPath }]);
+		return {
+			resourceId: result.id as string,
+			title: (result.title as string) || filename,
+			mimeType: (result.mime as string) || mimeType,
+		};
+	} finally {
+		try { fs.unlinkSync(tmpPath); } catch (_) {}
+	}
+}
 
 export const initPanel = async (): Promise<void> => {
 	panelVisible = false;
@@ -140,6 +163,36 @@ export const initPanel = async (): Promise<void> => {
 				console.log('[notion-panel] notion.askAI.request written OK');
 			} catch (err) {
 				console.error('askAI bridge write failed:', err);
+			}
+			return;
+		}
+
+		if (message.type === 'insertResource') {
+			const { uploadId, dataBase64, filename, mimeType } = message as {
+				uploadId: number;
+				dataBase64: string;
+				filename: string;
+				mimeType: string;
+			};
+			try {
+				const result = await handleInsertResource(dataBase64, filename, mimeType);
+				if (panelHandle) {
+					await joplin.views.panels.postMessage(panelHandle, {
+						type: 'resourceInserted',
+						uploadId,
+						resourceId: result.resourceId,
+						title: result.title,
+						mimeType: result.mimeType,
+					});
+				}
+			} catch (err) {
+				if (panelHandle) {
+					await joplin.views.panels.postMessage(panelHandle, {
+						type: 'resourceInsertError',
+						uploadId,
+						message: err instanceof Error ? err.message : String(err),
+					});
+				}
 			}
 			return;
 		}
