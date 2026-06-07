@@ -2,14 +2,25 @@
   "manifest_version": 1,
   "id": "net.roxl.joplin-notion",
   "app_min_version": "1.6",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "name": "Notion Block Editor",
   "description": "Notion-like block editor for Joplin with drag-and-drop blocks, vim navigation, TOC, and document export (PDF/DOCX/RTF).",
   "author": "riskyworks",
   "homepage_url": "",
   "repository_url": "",
-  "keywords": ["editor", "notion", "blocks", "export", "pdf", "docx", "rtf", "vim"],
-  "categories": ["editor"],
+  "keywords": [
+    "editor",
+    "notion",
+    "blocks",
+    "export",
+    "pdf",
+    "docx",
+    "rtf",
+    "vim"
+  ],
+  "categories": [
+    "editor"
+  ],
   "screenshots": [],
   "icons": {},
   "promo_tile": {}
