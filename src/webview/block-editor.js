@@ -92,6 +92,7 @@
   const FONT_SIZE_DEFAULT = 14;
 
   let editorSettings = { fontSize: FONT_SIZE_DEFAULT };
+  let _settingsEscHandler = null;
 
   const loadSettings = () => {
     try {
@@ -1842,6 +1843,10 @@
   // ── Settings modal ─────────────────────────────────────────────────────────
 
   const closeSettingsModal = () => {
+    if (_settingsEscHandler) {
+      document.removeEventListener('keydown', _settingsEscHandler, true);
+      _settingsEscHandler = null;
+    }
     const overlay = document.getElementById('be-settings-overlay');
     if (overlay) overlay.remove();
     const btn = document.getElementById('settings-btn');
@@ -1852,7 +1857,7 @@
     if (document.getElementById('be-settings-overlay')) { closeSettingsModal(); return; }
 
     const optionsHtml = FONT_SIZE_OPTIONS
-      .map(function (s) { return '<option value="' + s + '"' + (s === editorSettings.fontSize ? ' selected' : '') + '>' + s + 'px</option>'; })
+      .map((s) => { return '<option value="' + s + '"' + (s === editorSettings.fontSize ? ' selected' : '') + '>' + s + 'px</option>'; })
       .join('');
 
     const modal = document.createElement('div');
@@ -1870,25 +1875,24 @@
     const overlay = document.createElement('div');
     overlay.id = 'be-settings-overlay';
     overlay.className = 'be-settings-overlay';
-    overlay.addEventListener('click', function (e) { if (e.target === overlay) closeSettingsModal(); });
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) closeSettingsModal(); });
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
 
     modal.querySelector('.be-settings-close').addEventListener('click', closeSettingsModal);
 
-    document.getElementById('be-font-size-select').addEventListener('change', function (e) {
-      var size = parseInt(e.target.value, 10);
+    document.getElementById('be-font-size-select').addEventListener('change', (e) => {
+      const size = parseInt(e.target.value, 10);
+      if (!FONT_SIZE_OPTIONS.includes(size)) return;
       editorSettings.fontSize = size;
       applyFontSize(size);
       saveSettings();
     });
 
-    var onEsc = function (e) {
-      if (e.key === 'Escape') { closeSettingsModal(); document.removeEventListener('keydown', onEsc, true); }
-    };
-    document.addEventListener('keydown', onEsc, true);
+    _settingsEscHandler = (e) => { if (e.key === 'Escape') closeSettingsModal(); };
+    document.addEventListener('keydown', _settingsEscHandler, true);
 
-    var btn = document.getElementById('settings-btn');
+    const btn = document.getElementById('settings-btn');
     if (btn) btn.classList.add('settings-active');
   };
 
@@ -1897,7 +1901,7 @@
   const initSettings = () => {
     loadSettings();
     applyFontSize(editorSettings.fontSize);
-    var btn = document.getElementById('settings-btn');
+    const btn = document.getElementById('settings-btn');
     if (btn) btn.addEventListener('click', openSettingsModal);
   };
 
