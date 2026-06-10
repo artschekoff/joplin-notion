@@ -3,6 +3,19 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
+const MSG = {
+	GET_NOTE:              'getNote',
+	SAVE_BLOCKS:           'saveBlocks',
+	SAVE_TITLE:            'saveTitle',
+	ASK_AI:                'askAI',
+	INSERT_RESOURCE:       'insertResource',
+	NOTE_LOADED:           'noteLoaded',
+	ERROR:                 'error',
+	RESOURCE_INSERTED:     'resourceInserted',
+	RESOURCE_INSERT_ERROR: 'resourceInsertError',
+	ASK_AI_ERROR:          'askAIError',
+} as const;
+
 let panelHandle: string | null = null;
 let panelVisible = false;
 let lastProcessedErrorTs = Date.now();
@@ -54,7 +67,7 @@ const sendNoteLoaded = async () => {
 	const note = await getCurrentNote();
 	if (!note) return;
 	await joplin.views.panels.postMessage(panelHandle, {
-		type: 'noteLoaded',
+		type: MSG.NOTE_LOADED,
 		note: { id: note.id, title: note.title, body: note.body },
 	});
 };
@@ -106,12 +119,12 @@ export const initPanel = async (): Promise<void> => {
 	await joplin.views.panels.onMessage(panelHandle, async (message: any) => {
 		if (!panelHandle) return;
 
-		if (message.type === 'getNote') {
+		if (message.type === MSG.GET_NOTE) {
 			await sendNoteLoaded();
 			return;
 		}
 
-		if (message.type === 'saveBlocks') {
+		if (message.type === MSG.SAVE_BLOCKS) {
 			const { noteId, markdown } = message as { noteId: unknown; markdown: unknown };
 			if (typeof noteId === 'string' && noteId && typeof markdown === 'string') {
 				isSavingFromPanel = true;
@@ -123,7 +136,7 @@ export const initPanel = async (): Promise<void> => {
 					console.error('saveBlocks failed:', errMsg);
 					if (panelHandle) {
 						await joplin.views.panels.postMessage(panelHandle, {
-							type: 'error',
+							type: MSG.ERROR,
 							message: 'Failed to save note. Please try again.',
 						});
 					}
@@ -137,7 +150,7 @@ export const initPanel = async (): Promise<void> => {
 			return;
 		}
 
-		if (message.type === 'saveTitle') {
+		if (message.type === MSG.SAVE_TITLE) {
 			const { noteId, title } = message as { noteId: unknown; title: unknown };
 			if (typeof noteId === 'string' && noteId && typeof title === 'string') {
 				try {
@@ -150,7 +163,7 @@ export const initPanel = async (): Promise<void> => {
 			return;
 		}
 
-		if (message.type === 'askAI') {
+		if (message.type === MSG.ASK_AI) {
 			const text = typeof message.text === 'string' ? message.text : '';
 			const prompt = typeof message.prompt === 'string' ? message.prompt : '';
 			const isSelection = message.isSelection === true;
@@ -172,7 +185,7 @@ export const initPanel = async (): Promise<void> => {
 			return;
 		}
 
-		if (message.type === 'insertResource') {
+		if (message.type === MSG.INSERT_RESOURCE) {
 			const { uploadId, dataBase64, filename, mimeType } = message as {
 				uploadId: number;
 				dataBase64: string;
@@ -183,7 +196,7 @@ export const initPanel = async (): Promise<void> => {
 				const result = await handleInsertResource(dataBase64, filename, mimeType);
 				if (panelHandle) {
 					await joplin.views.panels.postMessage(panelHandle, {
-						type: 'resourceInserted',
+						type: MSG.RESOURCE_INSERTED,
 						uploadId,
 						resourceId: result.resourceId,
 						title: result.title,
@@ -193,7 +206,7 @@ export const initPanel = async (): Promise<void> => {
 			} catch (err) {
 				if (panelHandle) {
 					await joplin.views.panels.postMessage(panelHandle, {
-						type: 'resourceInsertError',
+						type: MSG.RESOURCE_INSERT_ERROR,
 						uploadId,
 						message: err instanceof Error ? err.message : String(err),
 					});
@@ -231,7 +244,7 @@ export const initPanel = async (): Promise<void> => {
 			if (parsed.ts <= lastProcessedErrorTs) return;
 			lastProcessedErrorTs = parsed.ts;
 			await joplin.views.panels.postMessage(panelHandle, {
-				type: 'askAIError',
+				type: MSG.ASK_AI_ERROR,
 				message: parsed.message,
 			});
 		} catch {

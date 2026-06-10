@@ -49,7 +49,9 @@ describe('markdownToBlocks — file resource lines', () => {
 
 describe('blocksToMarkdown — image blocks', () => {
 	it('serializes an image block to Joplin image markdown', () => {
-		const md = blocksToMarkdown([{ type: 'image', data: { resourceId: 'abc123', title: 'photo.png' } }]);
+		const md = blocksToMarkdown([
+			{ type: 'image', data: { resourceId: 'abc123', title: 'photo.png' } },
+		]);
 		expect(md).toBe('![photo.png](:/abc123)');
 	});
 
@@ -66,7 +68,9 @@ describe('blocksToMarkdown — image blocks', () => {
 
 describe('blocksToMarkdown — file blocks', () => {
 	it('serializes a file block to Joplin file link markdown', () => {
-		const md = blocksToMarkdown([{ type: 'file', data: { resourceId: 'def456', title: 'report.pdf' } }]);
+		const md = blocksToMarkdown([
+			{ type: 'file', data: { resourceId: 'def456', title: 'report.pdf' } },
+		]);
 		expect(md).toBe('[report.pdf](:/def456)');
 	});
 

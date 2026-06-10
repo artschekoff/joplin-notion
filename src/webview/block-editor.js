@@ -11,6 +11,25 @@
 (function () {
   'use strict';
 
+  // ── Constants ─────────────────────────────────────────────────────────────
+
+  const MSG = Object.freeze({
+    // Sent to panel.ts
+    GET_NOTE:              'getNote',
+    SAVE_BLOCKS:           'saveBlocks',
+    SAVE_TITLE:            'saveTitle',
+    ASK_AI:                'askAI',
+    INSERT_RESOURCE:       'insertResource',
+    // Received from panel.ts
+    NOTE_LOADED:           'noteLoaded',
+    ERROR:                 'error',
+    RESOURCE_INSERTED:     'resourceInserted',
+    RESOURCE_INSERT_ERROR: 'resourceInsertError',
+    ASK_AI_ERROR:          'askAIError',
+  });
+
+  const VIM = Object.freeze({ INSERT: 'insert', NORMAL: 'normal', BLOCK: 'block', VISUAL: 'visual' });
+
   // ── State ──────────────────────────────────────────────────────────────────
 
   /** @type {any} */
@@ -28,7 +47,7 @@
   let _nextUploadId = 1;
 
   /** @type {'insert'|'block'|'normal'} */
-  let vimMode = 'insert';
+  let vimMode = VIM.INSERT;
   let vimIndex = 0;          // currently selected block in normal mode
   let vimPendingKey = null;  // waiting for composite (dd / gg / yy)
   let vimPendingTimer = null;
@@ -79,7 +98,7 @@
       try {
         const out = await editor.save();
         const md = window.MarkdownConverter.blocksToMarkdown(out.blocks);
-        window.webviewApi.postMessage({ type: 'saveBlocks', noteId: currentNoteId, markdown: md });
+        window.webviewApi.postMessage({ type: MSG.SAVE_BLOCKS, noteId: currentNoteId, markdown: md });
       } catch (_) {}
     }, SAVE_DEBOUNCE_MS);
   };
@@ -93,7 +112,7 @@
       const titleEl = document.getElementById('note-title');
       if (!titleEl) return;
       window.webviewApi.postMessage({
-        type: 'saveTitle',
+        type: MSG.SAVE_TITLE,
         noteId: currentNoteId,
         title: titleEl.value,
       });
@@ -179,19 +198,19 @@
   const updateVimUI = () => {
     const el = vimStatusEl();
     if (el) {
-      if (vimMode === 'normal') el.textContent = '-- NORMAL --';
-      else if (vimMode === 'block' && vimBlockVisual) el.textContent = '-- VISUAL --';
-      else if (vimMode === 'block') el.textContent = '-- BLOCK --';
+      if (vimMode === VIM.NORMAL) el.textContent = '-- NORMAL --';
+      else if (vimMode === VIM.BLOCK && vimBlockVisual) el.textContent = '-- VISUAL --';
+      else if (vimMode === VIM.BLOCK) el.textContent = '-- BLOCK --';
       else el.textContent = '-- INSERT --';
     }
     const bar = document.getElementById('vim-statusbar');
-    if (bar) bar.setAttribute('data-mode', vimMode === 'block' && vimBlockVisual ? 'visual' : vimMode);
+    if (bar) bar.setAttribute('data-mode', vimMode === VIM.BLOCK && vimBlockVisual ? VIM.VISUAL : vimMode);
     // Suppress the EditorJS inline toolbar while in visual mode so it can't steal focus.
-    document.body.classList.toggle('vim-block-visual', vimMode === 'block' && vimBlockVisual);
+    document.body.classList.toggle('vim-block-visual', vimMode === VIM.BLOCK && vimBlockVisual);
 
     // Block highlight in both 'block' and 'normal' modes
     document.querySelectorAll('.ce-block--vim').forEach(b => b.classList.remove('ce-block--vim'));
-    if (vimMode === 'normal' || vimMode === 'block') {
+    if (vimMode === VIM.NORMAL || vimMode === VIM.BLOCK) {
       const blocks = document.querySelectorAll('#editor-container .ce-block');
       if (blocks[vimIndex]) blocks[vimIndex].classList.add('ce-block--vim');
     }
@@ -210,7 +229,7 @@
   };
 
   const vimEnterInsert = (position = 'start') => {
-    vimMode = 'insert';
+    vimMode = VIM.INSERT;
     updateVimUI();
     try { editor.caret.setToBlock(vimIndex, position); } catch (_) {}
   };
@@ -333,7 +352,7 @@
 
   /** @returns {boolean} true if key was consumed */
   const handleVimKey = async (e) => {
-    if (vimMode !== 'normal') return false;
+    if (vimMode !== VIM.NORMAL) return false;
 
     const key = getVimKey(e);
     const prev = vimPendingKey;
@@ -370,7 +389,7 @@
         editor.blocks.delete(vimIndex);
         editor.blocks.insert('paragraph', {}, null, vimIndex, true);
       } catch (_) {}
-      vimMode = 'insert';
+      vimMode = VIM.INSERT;
       updateVimUI();
       setTimeout(() => { try { editor.caret.setToBlock(vimIndex, 'start'); } catch (_) {} }, 0);
       scheduleSave();
@@ -390,7 +409,7 @@
         e.preventDefault();
         editor.blocks.insert('paragraph', {}, null, vimIndex + 1, true);
         vimIndex = vimIndex + 1;
-        vimMode = 'insert';
+        vimMode = VIM.INSERT;
         updateVimUI();
         setTimeout(() => { try { editor.caret.setToBlock(vimIndex, 'start'); } catch (_) {} }, 0);
         return true;
@@ -398,7 +417,7 @@
       case 'O':
         e.preventDefault();
         editor.blocks.insert('paragraph', {}, null, vimIndex, true);
-        vimMode = 'insert';
+        vimMode = VIM.INSERT;
         updateVimUI();
         setTimeout(() => { try { editor.caret.setToBlock(vimIndex, 'start'); } catch (_) {} }, 0);
         return true;
@@ -453,17 +472,17 @@
       if (!container.contains(e.target) && e.target !== container) return;
 
       if (e.key === 'Escape') {
-        if (vimMode === 'insert') {
+        if (vimMode === VIM.INSERT) {
           // Esc from insert → block (keep contenteditable focused for in-block vim)
           try { vimIndex = editor.blocks.getCurrentBlockIndex(); } catch (_) {}
-          vimMode = 'block';
+          vimMode = VIM.BLOCK;
           vimBlockVisual = false;
           updateVimUI();
           e.preventDefault();
           e.stopImmediatePropagation();
           return;
         }
-        if (vimMode === 'block' && vimBlockVisual) {
+        if (vimMode === VIM.BLOCK && vimBlockVisual) {
           // Esc from visual → block (collapse to tracked focus)
           const fp = nodeAtCI(visualBlockCE, visualFocusCI);
           const s = window.getSelection();
@@ -475,11 +494,11 @@
           e.stopImmediatePropagation();
           return;
         }
-        if (vimMode === 'block') {
+        if (vimMode === VIM.BLOCK) {
           // Esc from block → normal navigation (leave the block)
           if (document.activeElement) document.activeElement.blur();
           container.focus();
-          vimMode = 'normal';
+          vimMode = VIM.NORMAL;
           vimBlockVisual = false;
           updateVimUI();
           e.preventDefault();
@@ -506,7 +525,7 @@
 
       // Block mode: in-block vim navigation (contenteditable stays focused).
       // Selection.modify() is available in all Chromium/Electron environments.
-      if (vimMode === 'block') {
+      if (vimMode === VIM.BLOCK) {
         // Let system shortcuts (Ctrl+C copy, Ctrl+A select-all, etc.) pass through.
         if (e.ctrlKey || e.metaKey) return;
         e.preventDefault();
@@ -611,7 +630,7 @@
           // Motion helpers shared by d, c, y
           const applyMotion = (motionDir, motionGran) => {
             if      (pendingOp === 'd') { deleteMotion(motionDir, motionGran); }
-            else if (pendingOp === 'c') { deleteMotion(motionDir, motionGran); vimMode = 'insert'; updateVimUI(); }
+            else if (pendingOp === 'c') { deleteMotion(motionDir, motionGran); vimMode = VIM.INSERT; updateVimUI(); }
             else if (pendingOp === 'y') { yankMotion(motionDir, motionGran); }
           };
 
@@ -628,7 +647,7 @@
             if (pendingOp === 'd') { deleteMotion('forward', 'lineboundary'); }
             else if (pendingOp === 'c') {
               deleteMotion('forward', 'lineboundary');
-              vimMode = 'insert'; updateVimUI();
+              vimMode = VIM.INSERT; updateVimUI();
             } else if (pendingOp === 'y') {
               yankMotion('forward', 'lineboundary');
             }
@@ -691,20 +710,20 @@
           if (key === 'c') {
             try { const r = _buildVisualRange(); if (r && !r.collapsed) { r.deleteContents(); scheduleSave(); } } catch (_) {}
             clearVisual();
-            vimMode = 'insert';
+            vimMode = VIM.INSERT;
             updateVimUI();
             return;
           }
         }
 
         // ── Enter / exit insert mode ────────────────────────────────────────
-        if (key === 'i') { clearVisual(); vimMode = 'insert'; updateVimUI(); return; }
-        if (key === 'a') { move('forward', 'character'); clearVisual(); vimMode = 'insert'; updateVimUI(); return; }
-        if (key === 'I') { move('backward', 'lineboundary'); clearVisual(); vimMode = 'insert'; updateVimUI(); return; }
-        if (key === 'A') { move('forward',  'lineboundary'); clearVisual(); vimMode = 'insert'; updateVimUI(); return; }
+        if (key === 'i') { clearVisual(); vimMode = VIM.INSERT; updateVimUI(); return; }
+        if (key === 'a') { move('forward', 'character'); clearVisual(); vimMode = VIM.INSERT; updateVimUI(); return; }
+        if (key === 'I') { move('backward', 'lineboundary'); clearVisual(); vimMode = VIM.INSERT; updateVimUI(); return; }
+        if (key === 'A') { move('forward',  'lineboundary'); clearVisual(); vimMode = VIM.INSERT; updateVimUI(); return; }
         // o/O: open new line below/above — place cursor at line end/start and insert
-        if (key === 'o') { move('forward',  'lineboundary'); clearVisual(); vimMode = 'insert'; updateVimUI(); return; }
-        if (key === 'O') { move('backward', 'lineboundary'); clearVisual(); vimMode = 'insert'; updateVimUI(); return; }
+        if (key === 'o') { move('forward',  'lineboundary'); clearVisual(); vimMode = VIM.INSERT; updateVimUI(); return; }
+        if (key === 'O') { move('backward', 'lineboundary'); clearVisual(); vimMode = VIM.INSERT; updateVimUI(); return; }
 
         // ── Undo ────────────────────────────────────────────────────────────
         if (key === 'u') {
@@ -717,7 +736,7 @@
             editor.caret.setToBlock(vimIndex, 'start');
           } catch (_) {
             container.focus();
-            vimMode = 'normal';
+            vimMode = VIM.NORMAL;
             updateVimUI();
           }
           return;
@@ -727,11 +746,11 @@
         if (key === 'x') { deleteMotion('forward',  'character'); return; }
         if (key === 'X') { deleteMotion('backward', 'character'); return; }
         // s: substitute char (delete char + insert)
-        if (key === 's') { deleteMotion('forward', 'character'); vimMode = 'insert'; updateVimUI(); return; }
+        if (key === 's') { deleteMotion('forward', 'character'); vimMode = VIM.INSERT; updateVimUI(); return; }
         // S: substitute line (delete line + insert)
-        if (key === 'S') { move('backward', 'lineboundary'); deleteMotion('forward', 'lineboundary'); vimMode = 'insert'; updateVimUI(); return; }
+        if (key === 'S') { move('backward', 'lineboundary'); deleteMotion('forward', 'lineboundary'); vimMode = VIM.INSERT; updateVimUI(); return; }
         // C: change to end of line
-        if (key === 'C') { deleteMotion('forward', 'lineboundary'); vimMode = 'insert'; updateVimUI(); return; }
+        if (key === 'C') { deleteMotion('forward', 'lineboundary'); vimMode = VIM.INSERT; updateVimUI(); return; }
 
         // ── Toggle case ─────────────────────────────────────────────────────
         if (key === '~') {
@@ -791,7 +810,7 @@
         return;
       }
 
-      if (vimMode === 'normal') {
+      if (vimMode === VIM.NORMAL) {
         if (e.ctrlKey && e.code === 'KeyD') {
           const editorEl = document.getElementById('editor-container');
           if (editorEl) { e.preventDefault(); editorEl.scrollBy({ top: editorEl.clientHeight / 2, behavior: 'smooth' }); return; }
@@ -846,7 +865,7 @@
         }
         updateVimUI();
         if (typeof window.webviewApi !== 'undefined') {
-          window.webviewApi.postMessage({ type: 'getNote' });
+          window.webviewApi.postMessage({ type: MSG.GET_NOTE });
         }
       },
       onChange: () => {
@@ -1272,7 +1291,7 @@
           });
 
           window.webviewApi.postMessage({
-            type: 'insertResource',
+            type: MSG.INSERT_RESOURCE,
             uploadId,
             dataBase64,
             filename: file.name,
@@ -1411,7 +1430,7 @@
       input.disabled = true;
       console.log('[block-editor] submitPopup — webviewApi:', typeof window.webviewApi, 'text.len:', selectedText?.length, 'prompt:', prompt.substring(0, 50));
       if (typeof window.webviewApi !== 'undefined') {
-        window.webviewApi.postMessage({ type: 'askAI', text: selectedText, prompt: prompt, isSelection: true });
+        window.webviewApi.postMessage({ type: MSG.ASK_AI, text: selectedText, prompt: prompt, isSelection: true });
         console.log('[block-editor] postMessage sent');
       } else {
         console.error('[block-editor] webviewApi is undefined — postMessage NOT sent');
@@ -1538,12 +1557,27 @@
     window.webviewApi.onMessage((event) => {
       const message = event && event.message && event.message.type ? event.message : event;
       if (!message) return;
-      if (message.type === 'noteLoaded') {
+      if (message.type === MSG.NOTE_LOADED) {
         clearAskAIInflight();
         const note = message.note || null;
         if (window.BlockEditor) window.BlockEditor.loadNote(note);
       }
-      if (message.type === 'askAIError') {
+      if (message.type === MSG.ERROR) {
+        const errMsg = (message.message && typeof message.message === 'string')
+          ? message.message
+          : 'An error occurred';
+        const toast = document.createElement('div');
+        toast.style.cssText = [
+          'position:fixed', 'bottom:16px', 'right:16px',
+          'background:#ef4444', 'color:#fff', 'border-radius:6px',
+          'padding:8px 14px', 'font-size:13px', 'z-index:99999',
+          'box-shadow:0 2px 8px rgba(0,0,0,0.2)', 'max-width:320px', 'word-break:break-word',
+        ].join(';');
+        toast.textContent = errMsg;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 4000);
+      }
+      if (message.type === MSG.ASK_AI_ERROR) {
         clearAskAIInflight();
         const errMsg = (message.message && typeof message.message === 'string')
           ? message.message
@@ -1567,7 +1601,7 @@
         document.body.appendChild(toast);
         setTimeout(function () { toast.remove(); }, 4000);
       }
-      if (message.type === 'resourceInserted') {
+      if (message.type === MSG.RESOURCE_INSERTED) {
         const { uploadId, resourceId, title, mimeType } = message;
         const cb = _pendingUploads.get(uploadId);
         if (cb) {
@@ -1575,7 +1609,7 @@
           _pendingUploads.delete(uploadId);
         }
       }
-      if (message.type === 'resourceInsertError') {
+      if (message.type === MSG.RESOURCE_INSERT_ERROR) {
         const { uploadId } = message;
         _pendingUploads.delete(uploadId);
         const toast = document.createElement('div');

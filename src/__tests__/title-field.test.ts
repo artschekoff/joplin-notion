@@ -42,7 +42,7 @@ describe('title field — panel.ts message handler', () => {
 	const panelSrc = fs.readFileSync(path.join(ROOT, 'src', 'panel.ts'), 'utf-8');
 
 	it('should handle saveTitle message type', () => {
-		expect(panelSrc).toContain("message.type === 'saveTitle'");
+		expect(panelSrc).toContain('MSG.SAVE_TITLE');
 	});
 
 	it('should call joplin.data.put with title property for saveTitle', () => {
@@ -59,7 +59,7 @@ describe('title field — block-editor.js', () => {
 	});
 
 	it('should post a saveTitle message on title change', () => {
-		expect(editorSrc).toContain("type: 'saveTitle'");
+		expect(editorSrc).toContain('MSG.SAVE_TITLE');
 	});
 
 	it('should debounce title saves', () => {

@@ -6,7 +6,7 @@ const panelSrc = fs.readFileSync(path.join(ROOT, 'src', 'panel.ts'), 'utf-8');
 
 describe('panel.ts — insertResource message handler', () => {
 	it('handles insertResource message type', () => {
-		expect(panelSrc).toContain("message.type === 'insertResource'");
+		expect(panelSrc).toContain('MSG.INSERT_RESOURCE');
 	});
 
 	it('calls joplin.data.post for resources endpoint', () => {
@@ -14,11 +14,11 @@ describe('panel.ts — insertResource message handler', () => {
 	});
 
 	it('responds with resourceInserted message type', () => {
-		expect(panelSrc).toContain("type: 'resourceInserted'");
+		expect(panelSrc).toContain('MSG.RESOURCE_INSERTED');
 	});
 
 	it('responds with resourceInsertError on failure', () => {
-		expect(panelSrc).toContain("type: 'resourceInsertError'");
+		expect(panelSrc).toContain('MSG.RESOURCE_INSERT_ERROR');
 	});
 
 	it('exports handleInsertResource for testing', () => {
