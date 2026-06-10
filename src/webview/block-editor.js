@@ -85,6 +85,36 @@
   /** @type {IntersectionObserver|null} */
   let tocObserver = null;
 
+  // ── Settings state ─────────────────────────────────────────────────────────
+
+  const SETTINGS_STORAGE_KEY = 'be-settings';
+  const FONT_SIZE_OPTIONS = [11, 12, 13, 14, 15, 16, 18, 20];
+  const FONT_SIZE_DEFAULT = 14;
+
+  let editorSettings = { fontSize: FONT_SIZE_DEFAULT };
+
+  const loadSettings = () => {
+    try {
+      const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (typeof parsed.fontSize === 'number' && FONT_SIZE_OPTIONS.includes(parsed.fontSize)) {
+          editorSettings.fontSize = parsed.fontSize;
+        }
+      }
+    } catch (_) {}
+  };
+
+  const saveSettings = () => {
+    try {
+      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(editorSettings));
+    } catch (_) {}
+  };
+
+  const applyFontSize = (size) => {
+    document.documentElement.style.setProperty('--editor-font-size', size + 'px');
+  };
+
   // ── Save helpers ───────────────────────────────────────────────────────────
 
   const scheduleSave = () => {
@@ -1809,6 +1839,13 @@
     obs.observe(container, { childList: true, subtree: true });
   };
 
+  // ── Settings init ──────────────────────────────────────────────────────────
+
+  const initSettings = () => {
+    loadSettings();
+    applyFontSize(editorSettings.fontSize);
+  };
+
   // ── Boot ───────────────────────────────────────────────────────────────────
 
   const boot = () => {
@@ -1817,6 +1854,7 @@
     attachPopoverBehavior();
     attachMessageHandler();
     patchListContentEditable();
+    initSettings();
 
     if (!initEditorJs()) {
       setTimeout(() => { if (!initEditorJs()) console.error('[BlockEditor] EditorJS failed to load'); }, 500);
