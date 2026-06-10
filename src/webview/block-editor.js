@@ -1839,11 +1839,66 @@
     obs.observe(container, { childList: true, subtree: true });
   };
 
+  // ── Settings modal ─────────────────────────────────────────────────────────
+
+  const closeSettingsModal = () => {
+    const overlay = document.getElementById('be-settings-overlay');
+    if (overlay) overlay.remove();
+    const btn = document.getElementById('settings-btn');
+    if (btn) btn.classList.remove('settings-active');
+  };
+
+  const openSettingsModal = () => {
+    if (document.getElementById('be-settings-overlay')) { closeSettingsModal(); return; }
+
+    const optionsHtml = FONT_SIZE_OPTIONS
+      .map(function (s) { return '<option value="' + s + '"' + (s === editorSettings.fontSize ? ' selected' : '') + '>' + s + 'px</option>'; })
+      .join('');
+
+    const modal = document.createElement('div');
+    modal.className = 'be-settings-modal';
+    modal.innerHTML =
+      '<div class="be-settings-header">' +
+        '<span class="be-settings-title">Editor Settings</span>' +
+        '<button class="be-settings-close" aria-label="Close">✕</button>' +
+      '</div>' +
+      '<div class="be-settings-row">' +
+        '<label class="be-settings-label" for="be-font-size-select">Font size</label>' +
+        '<select id="be-font-size-select" class="be-settings-select">' + optionsHtml + '</select>' +
+      '</div>';
+
+    const overlay = document.createElement('div');
+    overlay.id = 'be-settings-overlay';
+    overlay.className = 'be-settings-overlay';
+    overlay.addEventListener('click', function (e) { if (e.target === overlay) closeSettingsModal(); });
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    modal.querySelector('.be-settings-close').addEventListener('click', closeSettingsModal);
+
+    document.getElementById('be-font-size-select').addEventListener('change', function (e) {
+      var size = parseInt(e.target.value, 10);
+      editorSettings.fontSize = size;
+      applyFontSize(size);
+      saveSettings();
+    });
+
+    var onEsc = function (e) {
+      if (e.key === 'Escape') { closeSettingsModal(); document.removeEventListener('keydown', onEsc, true); }
+    };
+    document.addEventListener('keydown', onEsc, true);
+
+    var btn = document.getElementById('settings-btn');
+    if (btn) btn.classList.add('settings-active');
+  };
+
   // ── Settings init ──────────────────────────────────────────────────────────
 
   const initSettings = () => {
     loadSettings();
     applyFontSize(editorSettings.fontSize);
+    var btn = document.getElementById('settings-btn');
+    if (btn) btn.addEventListener('click', openSettingsModal);
   };
 
   // ── Boot ───────────────────────────────────────────────────────────────────
