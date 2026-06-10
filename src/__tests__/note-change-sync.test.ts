@@ -21,7 +21,7 @@ describe('note content sync — panel.ts', () => {
 	});
 
 	it('should set the save guard to true before saving blocks', () => {
-		const saveBlocksIdx = panelSrc.indexOf("message.type === 'saveBlocks'");
+		const saveBlocksIdx = panelSrc.indexOf('MSG.SAVE_BLOCKS');
 		expect(saveBlocksIdx).toBeGreaterThan(-1);
 		const saveBlocksSection = panelSrc.slice(saveBlocksIdx, saveBlocksIdx + 600);
 		expect(saveBlocksSection).toMatch(/isSavingFromPanel\s*=\s*true/);

@@ -215,6 +215,20 @@ const markdownToBlocks = (markdown) => {
 			continue;
 		}
 
+		// ── Joplin resource: image ───────────────────────────────────────────────
+		const imageResMatch = line.match(/^!\[([^\]]*)\]\(:\/([0-9a-f]+)\)\s*$/i);
+		if (imageResMatch) {
+			blocks.push({ type: 'image', data: { title: imageResMatch[1], resourceId: imageResMatch[2] } });
+			continue;
+		}
+
+		// ── Joplin resource: file link ───────────────────────────────────────────
+		const fileResMatch = line.match(/^\[([^\]]*)\]\(:\/([0-9a-f]+)\)\s*$/i);
+		if (fileResMatch) {
+			blocks.push({ type: 'file', data: { title: fileResMatch[1], resourceId: fileResMatch[2] } });
+			continue;
+		}
+
 		// ── blank line → skip (no empty paragraph blocks) ───────────────────
 		if (line.trim() === '') {
 			continue;
@@ -317,6 +331,18 @@ const blocksToMarkdown = (blocks) => {
 				parts.push('---');
 				break;
 
+			case 'image':
+				if (d.resourceId) {
+					parts.push(`![${d.title || ''}](:/${d.resourceId})`);
+				}
+				break;
+
+			case 'file':
+				if (d.resourceId) {
+					parts.push(`[${d.title || ''}](:/${d.resourceId})`);
+				}
+				break;
+
 			default:
 				// Unknown block type — try to extract any text content
 				if (d.text) parts.push(htmlInlineToMd(d.text));
@@ -328,4 +354,9 @@ const blocksToMarkdown = (blocks) => {
 };
 
 // ── Expose globally ───────────────────────────────────────────────────────
-window.MarkdownConverter = { markdownToBlocks, blocksToMarkdown };
+if (typeof window !== 'undefined') {
+	window.MarkdownConverter = { markdownToBlocks, blocksToMarkdown };
+}
+if (typeof module !== 'undefined' && module.exports) {
+	module.exports = { markdownToBlocks, blocksToMarkdown };
+}

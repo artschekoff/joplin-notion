@@ -10,6 +10,7 @@
 	--selection-text: inherit;
 	--toc-bg-rgb: 243, 244, 246;
 	--toc-border-rgb: 107, 114, 128;
+	--editor-font-size: 14px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -85,6 +86,7 @@ body {
 	overflow-y: auto;
 	padding: 16px 24px;
 	height: 100%;
+	font-size: var(--editor-font-size);
 }
 
 ::highlight(vim-visual) {
@@ -358,4 +360,151 @@ body.vim-block-visual .ce-inline-toolbar {
 	background: rgba(74, 144, 217, 0.15);
 	color: var(--border-focus);
 	border-color: var(--border-focus);
+}
+
+/* ── Resource blocks (image / file) ─────────────────────────────────────── */
+
+.be-resource-block {
+	border-radius: 6px;
+	border: 1.5px dashed var(--border-color);
+	padding: 10px 14px;
+	cursor: default;
+}
+
+.be-resource-picker {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	color: var(--text-secondary);
+	font-size: 14px;
+	cursor: pointer;
+	user-select: none;
+}
+
+.be-resource-picker:hover {
+	color: var(--text-primary);
+}
+
+.be-resource-loaded {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 14px;
+	color: var(--text-primary);
+	word-break: break-all;
+}
+
+.be-image-block .be-resource-loaded {
+	color: var(--border-focus);
+}
+
+/* ── Settings button ────────────────────────────────────────────────────────── */
+
+#settings-btn {
+	position: fixed;
+	top: 6px;
+	right: 38px;
+	z-index: 2147483647;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 26px;
+	height: 26px;
+	border: 1px solid var(--border-color);
+	border-radius: 5px;
+	background: var(--bg-secondary);
+	color: var(--text-secondary);
+	cursor: pointer;
+	padding: 0;
+	transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+#settings-btn:hover {
+	background: var(--border-color);
+	color: var(--text-primary);
+	border-color: var(--border-focus);
+}
+
+#settings-btn.settings-active {
+	background: rgba(74, 144, 217, 0.15);
+	color: var(--border-focus);
+	border-color: var(--border-focus);
+}
+
+/* ── Settings modal ─────────────────────────────────────────────────────────── */
+
+.be-settings-overlay {
+	position: fixed;
+	inset: 0;
+	background: rgba(0, 0, 0, 0.3);
+	z-index: 2147483647;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.be-settings-modal {
+	background: var(--bg-primary);
+	border: 1px solid var(--border-color);
+	border-radius: 8px;
+	padding: 16px;
+	min-width: 260px;
+	box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+.be-settings-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 14px;
+}
+
+.be-settings-title {
+	font-size: 14px;
+	font-weight: 600;
+	color: var(--text-primary);
+}
+
+.be-settings-close {
+	background: none;
+	border: none;
+	cursor: pointer;
+	color: var(--text-secondary);
+	font-size: 16px;
+	padding: 2px 6px;
+	border-radius: 3px;
+	line-height: 1;
+}
+
+.be-settings-close:hover {
+	color: var(--text-primary);
+	background: var(--bg-secondary);
+}
+
+.be-settings-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 4px 0;
+}
+
+.be-settings-label {
+	font-size: 13px;
+	color: var(--text-primary);
+}
+
+.be-settings-select {
+	background: var(--bg-secondary);
+	border: 1px solid var(--border-color);
+	color: var(--text-primary);
+	border-radius: 4px;
+	padding: 3px 8px;
+	font-size: 13px;
+	cursor: pointer;
+}
+
+.be-settings-select:focus {
+	outline: 2px solid var(--border-focus);
+	outline-offset: 1px;
 }

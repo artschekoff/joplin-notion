@@ -11,6 +11,25 @@
 (function () {
   'use strict';
 
+  // ── Constants ─────────────────────────────────────────────────────────────
+
+  const MSG = Object.freeze({
+    // Sent to panel.ts
+    GET_NOTE:              'getNote',
+    SAVE_BLOCKS:           'saveBlocks',
+    SAVE_TITLE:            'saveTitle',
+    ASK_AI:                'askAI',
+    INSERT_RESOURCE:       'insertResource',
+    // Received from panel.ts
+    NOTE_LOADED:           'noteLoaded',
+    ERROR:                 'error',
+    RESOURCE_INSERTED:     'resourceInserted',
+    RESOURCE_INSERT_ERROR: 'resourceInsertError',
+    ASK_AI_ERROR:          'askAIError',
+  });
+
+  const VIM = Object.freeze({ INSERT: 'insert', NORMAL: 'normal', BLOCK: 'block', VISUAL: 'visual' });
+
   // ── State ──────────────────────────────────────────────────────────────────
 
   /** @type {any} */
@@ -23,8 +42,12 @@
 
   // ── Vim state ──────────────────────────────────────────────────────────────
 
+  // ── Resource upload registry ──────────────────────────────────────────────
+  const _pendingUploads = new Map();
+  let _nextUploadId = 1;
+
   /** @type {'insert'|'block'|'normal'} */
-  let vimMode = 'insert';
+  let vimMode = VIM.INSERT;
   let vimIndex = 0;          // currently selected block in normal mode
   let vimPendingKey = null;  // waiting for composite (dd / gg / yy)
   let vimPendingTimer = null;
@@ -62,6 +85,37 @@
   /** @type {IntersectionObserver|null} */
   let tocObserver = null;
 
+  // ── Settings state ─────────────────────────────────────────────────────────
+
+  const SETTINGS_STORAGE_KEY = 'be-settings';
+  const FONT_SIZE_OPTIONS = [11, 12, 13, 14, 15, 16, 18, 20];
+  const FONT_SIZE_DEFAULT = 14;
+
+  let editorSettings = { fontSize: FONT_SIZE_DEFAULT };
+  let _settingsEscHandler = null;
+
+  const loadSettings = () => {
+    try {
+      const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (typeof parsed.fontSize === 'number' && FONT_SIZE_OPTIONS.includes(parsed.fontSize)) {
+          editorSettings.fontSize = parsed.fontSize;
+        }
+      }
+    } catch (_) {}
+  };
+
+  const saveSettings = () => {
+    try {
+      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(editorSettings));
+    } catch (_) {}
+  };
+
+  const applyFontSize = (size) => {
+    document.documentElement.style.setProperty('--editor-font-size', size + 'px');
+  };
+
   // ── Save helpers ───────────────────────────────────────────────────────────
 
   const scheduleSave = () => {
@@ -75,7 +129,7 @@
       try {
         const out = await editor.save();
         const md = window.MarkdownConverter.blocksToMarkdown(out.blocks);
-        window.webviewApi.postMessage({ type: 'saveBlocks', noteId: currentNoteId, markdown: md });
+        window.webviewApi.postMessage({ type: MSG.SAVE_BLOCKS, noteId: currentNoteId, markdown: md });
       } catch (_) {}
     }, SAVE_DEBOUNCE_MS);
   };
@@ -89,7 +143,7 @@
       const titleEl = document.getElementById('note-title');
       if (!titleEl) return;
       window.webviewApi.postMessage({
-        type: 'saveTitle',
+        type: MSG.SAVE_TITLE,
         noteId: currentNoteId,
         title: titleEl.value,
       });
@@ -175,19 +229,19 @@
   const updateVimUI = () => {
     const el = vimStatusEl();
     if (el) {
-      if (vimMode === 'normal') el.textContent = '-- NORMAL --';
-      else if (vimMode === 'block' && vimBlockVisual) el.textContent = '-- VISUAL --';
-      else if (vimMode === 'block') el.textContent = '-- BLOCK --';
+      if (vimMode === VIM.NORMAL) el.textContent = '-- NORMAL --';
+      else if (vimMode === VIM.BLOCK && vimBlockVisual) el.textContent = '-- VISUAL --';
+      else if (vimMode === VIM.BLOCK) el.textContent = '-- BLOCK --';
       else el.textContent = '-- INSERT --';
     }
     const bar = document.getElementById('vim-statusbar');
-    if (bar) bar.setAttribute('data-mode', vimMode === 'block' && vimBlockVisual ? 'visual' : vimMode);
+    if (bar) bar.setAttribute('data-mode', vimMode === VIM.BLOCK && vimBlockVisual ? VIM.VISUAL : vimMode);
     // Suppress the EditorJS inline toolbar while in visual mode so it can't steal focus.
-    document.body.classList.toggle('vim-block-visual', vimMode === 'block' && vimBlockVisual);
+    document.body.classList.toggle('vim-block-visual', vimMode === VIM.BLOCK && vimBlockVisual);
 
     // Block highlight in both 'block' and 'normal' modes
     document.querySelectorAll('.ce-block--vim').forEach(b => b.classList.remove('ce-block--vim'));
-    if (vimMode === 'normal' || vimMode === 'block') {
+    if (vimMode === VIM.NORMAL || vimMode === VIM.BLOCK) {
       const blocks = document.querySelectorAll('#editor-container .ce-block');
       if (blocks[vimIndex]) blocks[vimIndex].classList.add('ce-block--vim');
     }
@@ -206,7 +260,7 @@
   };
 
   const vimEnterInsert = (position = 'start') => {
-    vimMode = 'insert';
+    vimMode = VIM.INSERT;
     updateVimUI();
     try { editor.caret.setToBlock(vimIndex, position); } catch (_) {}
   };
@@ -329,7 +383,7 @@
 
   /** @returns {boolean} true if key was consumed */
   const handleVimKey = async (e) => {
-    if (vimMode !== 'normal') return false;
+    if (vimMode !== VIM.NORMAL) return false;
 
     const key = getVimKey(e);
     const prev = vimPendingKey;
@@ -366,7 +420,7 @@
         editor.blocks.delete(vimIndex);
         editor.blocks.insert('paragraph', {}, null, vimIndex, true);
       } catch (_) {}
-      vimMode = 'insert';
+      vimMode = VIM.INSERT;
       updateVimUI();
       setTimeout(() => { try { editor.caret.setToBlock(vimIndex, 'start'); } catch (_) {} }, 0);
       scheduleSave();
@@ -386,7 +440,7 @@
         e.preventDefault();
         editor.blocks.insert('paragraph', {}, null, vimIndex + 1, true);
         vimIndex = vimIndex + 1;
-        vimMode = 'insert';
+        vimMode = VIM.INSERT;
         updateVimUI();
         setTimeout(() => { try { editor.caret.setToBlock(vimIndex, 'start'); } catch (_) {} }, 0);
         return true;
@@ -394,7 +448,7 @@
       case 'O':
         e.preventDefault();
         editor.blocks.insert('paragraph', {}, null, vimIndex, true);
-        vimMode = 'insert';
+        vimMode = VIM.INSERT;
         updateVimUI();
         setTimeout(() => { try { editor.caret.setToBlock(vimIndex, 'start'); } catch (_) {} }, 0);
         return true;
@@ -449,17 +503,17 @@
       if (!container.contains(e.target) && e.target !== container) return;
 
       if (e.key === 'Escape') {
-        if (vimMode === 'insert') {
+        if (vimMode === VIM.INSERT) {
           // Esc from insert → block (keep contenteditable focused for in-block vim)
           try { vimIndex = editor.blocks.getCurrentBlockIndex(); } catch (_) {}
-          vimMode = 'block';
+          vimMode = VIM.BLOCK;
           vimBlockVisual = false;
           updateVimUI();
           e.preventDefault();
           e.stopImmediatePropagation();
           return;
         }
-        if (vimMode === 'block' && vimBlockVisual) {
+        if (vimMode === VIM.BLOCK && vimBlockVisual) {
           // Esc from visual → block (collapse to tracked focus)
           const fp = nodeAtCI(visualBlockCE, visualFocusCI);
           const s = window.getSelection();
@@ -471,11 +525,11 @@
           e.stopImmediatePropagation();
           return;
         }
-        if (vimMode === 'block') {
+        if (vimMode === VIM.BLOCK) {
           // Esc from block → normal navigation (leave the block)
           if (document.activeElement) document.activeElement.blur();
           container.focus();
-          vimMode = 'normal';
+          vimMode = VIM.NORMAL;
           vimBlockVisual = false;
           updateVimUI();
           e.preventDefault();
@@ -502,7 +556,7 @@
 
       // Block mode: in-block vim navigation (contenteditable stays focused).
       // Selection.modify() is available in all Chromium/Electron environments.
-      if (vimMode === 'block') {
+      if (vimMode === VIM.BLOCK) {
         // Let system shortcuts (Ctrl+C copy, Ctrl+A select-all, etc.) pass through.
         if (e.ctrlKey || e.metaKey) return;
         e.preventDefault();
@@ -607,7 +661,7 @@
           // Motion helpers shared by d, c, y
           const applyMotion = (motionDir, motionGran) => {
             if      (pendingOp === 'd') { deleteMotion(motionDir, motionGran); }
-            else if (pendingOp === 'c') { deleteMotion(motionDir, motionGran); vimMode = 'insert'; updateVimUI(); }
+            else if (pendingOp === 'c') { deleteMotion(motionDir, motionGran); vimMode = VIM.INSERT; updateVimUI(); }
             else if (pendingOp === 'y') { yankMotion(motionDir, motionGran); }
           };
 
@@ -624,7 +678,7 @@
             if (pendingOp === 'd') { deleteMotion('forward', 'lineboundary'); }
             else if (pendingOp === 'c') {
               deleteMotion('forward', 'lineboundary');
-              vimMode = 'insert'; updateVimUI();
+              vimMode = VIM.INSERT; updateVimUI();
             } else if (pendingOp === 'y') {
               yankMotion('forward', 'lineboundary');
             }
@@ -679,31 +733,28 @@
             return;
           }
           if (key === 'd' || key === 'x') {
-            const r = _buildVisualRange();
-            if (r && !r.collapsed) { r.deleteContents(); scheduleSave(); }
+            try { const r = _buildVisualRange(); if (r && !r.collapsed) { r.deleteContents(); scheduleSave(); } } catch (_) {}
             clearVisual();
             updateVimUI();
             return;
           }
           if (key === 'c') {
-            // Cut selection and enter insert mode at deletion point
-            const r = _buildVisualRange();
-            if (r && !r.collapsed) { r.deleteContents(); scheduleSave(); }
+            try { const r = _buildVisualRange(); if (r && !r.collapsed) { r.deleteContents(); scheduleSave(); } } catch (_) {}
             clearVisual();
-            vimMode = 'insert';
+            vimMode = VIM.INSERT;
             updateVimUI();
             return;
           }
         }
 
         // ── Enter / exit insert mode ────────────────────────────────────────
-        if (key === 'i') { clearVisual(); vimMode = 'insert'; updateVimUI(); return; }
-        if (key === 'a') { move('forward', 'character'); clearVisual(); vimMode = 'insert'; updateVimUI(); return; }
-        if (key === 'I') { move('backward', 'lineboundary'); clearVisual(); vimMode = 'insert'; updateVimUI(); return; }
-        if (key === 'A') { move('forward',  'lineboundary'); clearVisual(); vimMode = 'insert'; updateVimUI(); return; }
+        if (key === 'i') { clearVisual(); vimMode = VIM.INSERT; updateVimUI(); return; }
+        if (key === 'a') { move('forward', 'character'); clearVisual(); vimMode = VIM.INSERT; updateVimUI(); return; }
+        if (key === 'I') { move('backward', 'lineboundary'); clearVisual(); vimMode = VIM.INSERT; updateVimUI(); return; }
+        if (key === 'A') { move('forward',  'lineboundary'); clearVisual(); vimMode = VIM.INSERT; updateVimUI(); return; }
         // o/O: open new line below/above — place cursor at line end/start and insert
-        if (key === 'o') { move('forward',  'lineboundary'); clearVisual(); vimMode = 'insert'; updateVimUI(); return; }
-        if (key === 'O') { move('backward', 'lineboundary'); clearVisual(); vimMode = 'insert'; updateVimUI(); return; }
+        if (key === 'o') { move('forward',  'lineboundary'); clearVisual(); vimMode = VIM.INSERT; updateVimUI(); return; }
+        if (key === 'O') { move('backward', 'lineboundary'); clearVisual(); vimMode = VIM.INSERT; updateVimUI(); return; }
 
         // ── Undo ────────────────────────────────────────────────────────────
         if (key === 'u') {
@@ -716,7 +767,7 @@
             editor.caret.setToBlock(vimIndex, 'start');
           } catch (_) {
             container.focus();
-            vimMode = 'normal';
+            vimMode = VIM.NORMAL;
             updateVimUI();
           }
           return;
@@ -726,11 +777,11 @@
         if (key === 'x') { deleteMotion('forward',  'character'); return; }
         if (key === 'X') { deleteMotion('backward', 'character'); return; }
         // s: substitute char (delete char + insert)
-        if (key === 's') { deleteMotion('forward', 'character'); vimMode = 'insert'; updateVimUI(); return; }
+        if (key === 's') { deleteMotion('forward', 'character'); vimMode = VIM.INSERT; updateVimUI(); return; }
         // S: substitute line (delete line + insert)
-        if (key === 'S') { move('backward', 'lineboundary'); deleteMotion('forward', 'lineboundary'); vimMode = 'insert'; updateVimUI(); return; }
+        if (key === 'S') { move('backward', 'lineboundary'); deleteMotion('forward', 'lineboundary'); vimMode = VIM.INSERT; updateVimUI(); return; }
         // C: change to end of line
-        if (key === 'C') { deleteMotion('forward', 'lineboundary'); vimMode = 'insert'; updateVimUI(); return; }
+        if (key === 'C') { deleteMotion('forward', 'lineboundary'); vimMode = VIM.INSERT; updateVimUI(); return; }
 
         // ── Toggle case ─────────────────────────────────────────────────────
         if (key === '~') {
@@ -790,7 +841,7 @@
         return;
       }
 
-      if (vimMode === 'normal') {
+      if (vimMode === VIM.NORMAL) {
         if (e.ctrlKey && e.code === 'KeyD') {
           const editorEl = document.getElementById('editor-container');
           if (editorEl) { e.preventDefault(); editorEl.scrollBy({ top: editorEl.clientHeight / 2, behavior: 'smooth' }); return; }
@@ -824,6 +875,8 @@
     tools.table = { class: SimpleTableTool, inlineToolbar: true };
     tools.askAI = { class: AskAIInlineTool };
     tools.askAITune = { class: AskAIBlockTune };
+    tools.image = { class: JoplinImageTool };
+    tools.file  = { class: JoplinFileTool };
 
     // Register vim keydown listener BEFORE new EditorJS() so our document-capture
     // handler fires before EditorJS's (registration order determines capture order).
@@ -843,7 +896,7 @@
         }
         updateVimUI();
         if (typeof window.webviewApi !== 'undefined') {
-          window.webviewApi.postMessage({ type: 'getNote' });
+          window.webviewApi.postMessage({ type: MSG.GET_NOTE });
         }
       },
       onChange: () => {
@@ -1184,6 +1237,127 @@
     static get isReadOnlySupported() { return true; }
   }
 
+  // ── Joplin resource block tools (Image + File) ────────────────────────────
+
+  function _makeResourceTool(cfg) {
+    return class {
+      static get toolbox() { return { title: cfg.title, icon: cfg.icon }; }
+
+      constructor({ data }) {
+        this._data = { resourceId: (data && data.resourceId) || '', title: (data && data.title) || '' };
+        this._wrapper = null;
+      }
+
+      render() {
+        this._wrapper = document.createElement('div');
+        this._wrapper.className = 'be-resource-block be-' + cfg.blockType + '-block';
+        if (this._data.resourceId) {
+          this._renderLoaded();
+        } else {
+          this._renderPicker();
+        }
+        return this._wrapper;
+      }
+
+      _renderPicker() {
+        const btn = document.createElement('div');
+        btn.className = 'be-resource-picker';
+        btn.textContent = cfg.pickerLabel;
+        btn.addEventListener('click', () => this._upload());
+        this._wrapper.innerHTML = '';
+        this._wrapper.appendChild(btn);
+      }
+
+      _renderLoaded() {
+        this._wrapper.innerHTML = '';
+        const label = document.createElement('div');
+        label.className = 'be-resource-loaded';
+        label.textContent = cfg.loadedIcon + ' ' + (this._data.title || cfg.blockType);
+        this._wrapper.appendChild(label);
+      }
+
+      _upload() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = cfg.accept;
+        input.addEventListener('change', async () => {
+          const file = input.files && input.files[0];
+          if (!file) return;
+          if (this._wrapper) this._wrapper.textContent = 'Uploading…';
+
+          const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // 50 MB
+          if (file.size > MAX_UPLOAD_BYTES) {
+            if (this._wrapper) this._renderPicker();
+            const toast = document.createElement('div');
+            toast.style.cssText = [
+              'position:fixed', 'bottom:16px', 'right:16px',
+              'background:#ef4444', 'color:#fff', 'border-radius:6px',
+              'padding:8px 14px', 'font-size:13px', 'z-index:99999',
+              'box-shadow:0 2px 8px rgba(0,0,0,0.2)', 'max-width:320px', 'word-break:break-word',
+            ].join(';');
+            toast.textContent = 'File too large (max 50 MB)';
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 4000);
+            return;
+          }
+
+          const arrayBuffer = await file.arrayBuffer();
+          const bytes = new Uint8Array(arrayBuffer);
+          let binary = '';
+          const CHUNK = 8192;
+          for (let i = 0; i < bytes.length; i += CHUNK) {
+            binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+          }
+          const dataBase64 = btoa(binary);
+          const uploadId = _nextUploadId++;
+
+          if (typeof window.webviewApi === 'undefined') {
+            if (this._wrapper) this._renderPicker();
+            return;
+          }
+
+          _pendingUploads.set(uploadId, (result) => {
+            this._data = { resourceId: result.resourceId, title: result.title };
+            this._renderLoaded();
+          });
+
+          window.webviewApi.postMessage({
+            type: MSG.INSERT_RESOURCE,
+            uploadId,
+            dataBase64,
+            filename: file.name,
+            mimeType: file.type,
+          });
+        });
+        input.click();
+      }
+
+      save() { return { resourceId: this._data.resourceId, title: this._data.title }; }
+      static get isReadOnlySupported() { return true; }
+    };
+  }
+
+  const IMAGE_ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
+  const FILE_ICON  = '<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>';
+
+  const JoplinImageTool = _makeResourceTool({
+    blockType: 'image',
+    title: 'Image',
+    icon: IMAGE_ICON,
+    accept: 'image/*',
+    pickerLabel: '🖼️ Click to select image…',
+    loadedIcon: '🖼️',
+  });
+
+  const JoplinFileTool = _makeResourceTool({
+    blockType: 'file',
+    title: 'File',
+    icon: FILE_ICON,
+    accept: '*/*',
+    pickerLabel: '📎 Click to attach file…',
+    loadedIcon: '📎',
+  });
+
   // ── "Ask AI" Editor.js inline tool ──────────────────────────────────────
 
   const ROBOT_SVG =
@@ -1287,7 +1461,7 @@
       input.disabled = true;
       console.log('[block-editor] submitPopup — webviewApi:', typeof window.webviewApi, 'text.len:', selectedText?.length, 'prompt:', prompt.substring(0, 50));
       if (typeof window.webviewApi !== 'undefined') {
-        window.webviewApi.postMessage({ type: 'askAI', text: selectedText, prompt: prompt, isSelection: true });
+        window.webviewApi.postMessage({ type: MSG.ASK_AI, text: selectedText, prompt: prompt, isSelection: true });
         console.log('[block-editor] postMessage sent');
       } else {
         console.error('[block-editor] webviewApi is undefined — postMessage NOT sent');
@@ -1414,12 +1588,27 @@
     window.webviewApi.onMessage((event) => {
       const message = event && event.message && event.message.type ? event.message : event;
       if (!message) return;
-      if (message.type === 'noteLoaded') {
+      if (message.type === MSG.NOTE_LOADED) {
         clearAskAIInflight();
         const note = message.note || null;
         if (window.BlockEditor) window.BlockEditor.loadNote(note);
       }
-      if (message.type === 'askAIError') {
+      if (message.type === MSG.ERROR) {
+        const errMsg = (message.message && typeof message.message === 'string')
+          ? message.message
+          : 'An error occurred';
+        const toast = document.createElement('div');
+        toast.style.cssText = [
+          'position:fixed', 'bottom:16px', 'right:16px',
+          'background:#ef4444', 'color:#fff', 'border-radius:6px',
+          'padding:8px 14px', 'font-size:13px', 'z-index:99999',
+          'box-shadow:0 2px 8px rgba(0,0,0,0.2)', 'max-width:320px', 'word-break:break-word',
+        ].join(';');
+        toast.textContent = errMsg;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 4000);
+      }
+      if (message.type === MSG.ASK_AI_ERROR) {
         clearAskAIInflight();
         const errMsg = (message.message && typeof message.message === 'string')
           ? message.message
@@ -1442,6 +1631,28 @@
         toast.textContent = 'AI error: ' + errMsg;
         document.body.appendChild(toast);
         setTimeout(function () { toast.remove(); }, 4000);
+      }
+      if (message.type === MSG.RESOURCE_INSERTED) {
+        const { uploadId, resourceId, title, mimeType } = message;
+        const cb = _pendingUploads.get(uploadId);
+        if (cb) {
+          cb({ resourceId, title, mimeType });
+          _pendingUploads.delete(uploadId);
+        }
+      }
+      if (message.type === MSG.RESOURCE_INSERT_ERROR) {
+        const { uploadId } = message;
+        _pendingUploads.delete(uploadId);
+        const toast = document.createElement('div');
+        toast.style.cssText = [
+          'position:fixed', 'bottom:16px', 'right:16px',
+          'background:#ef4444', 'color:#fff', 'border-radius:6px',
+          'padding:8px 14px', 'font-size:13px', 'z-index:99999',
+          'box-shadow:0 2px 8px rgba(0,0,0,0.2)', 'max-width:320px', 'word-break:break-word',
+        ].join(';');
+        toast.textContent = 'Upload failed: ' + (message.message || 'unknown error');
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 4000);
       }
     });
   };
@@ -1629,6 +1840,71 @@
     obs.observe(container, { childList: true, subtree: true });
   };
 
+  // ── Settings modal ─────────────────────────────────────────────────────────
+
+  const closeSettingsModal = () => {
+    if (_settingsEscHandler) {
+      document.removeEventListener('keydown', _settingsEscHandler, true);
+      _settingsEscHandler = null;
+    }
+    const overlay = document.getElementById('be-settings-overlay');
+    if (overlay) overlay.remove();
+    const btn = document.getElementById('settings-btn');
+    if (btn) btn.classList.remove('settings-active');
+  };
+
+  const openSettingsModal = () => {
+    if (document.getElementById('be-settings-overlay')) { closeSettingsModal(); return; }
+
+    const optionsHtml = FONT_SIZE_OPTIONS
+      .map((s) => { return '<option value="' + s + '"' + (s === editorSettings.fontSize ? ' selected' : '') + '>' + s + 'px</option>'; })
+      .join('');
+
+    const modal = document.createElement('div');
+    modal.className = 'be-settings-modal';
+    modal.innerHTML =
+      '<div class="be-settings-header">' +
+        '<span class="be-settings-title">Editor Settings</span>' +
+        '<button class="be-settings-close" aria-label="Close">✕</button>' +
+      '</div>' +
+      '<div class="be-settings-row">' +
+        '<label class="be-settings-label" for="be-font-size-select">Font size</label>' +
+        '<select id="be-font-size-select" class="be-settings-select">' + optionsHtml + '</select>' +
+      '</div>';
+
+    const overlay = document.createElement('div');
+    overlay.id = 'be-settings-overlay';
+    overlay.className = 'be-settings-overlay';
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) closeSettingsModal(); });
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    modal.querySelector('.be-settings-close').addEventListener('click', closeSettingsModal);
+
+    document.getElementById('be-font-size-select').addEventListener('change', (e) => {
+      const size = parseInt(e.target.value, 10);
+      if (!FONT_SIZE_OPTIONS.includes(size)) return;
+      editorSettings.fontSize = size;
+      applyFontSize(size);
+      saveSettings();
+    });
+
+    _settingsEscHandler = (e) => { if (e.key === 'Escape') closeSettingsModal(); };
+    document.addEventListener('keydown', _settingsEscHandler, true);
+
+    const btn = document.getElementById('settings-btn');
+    if (btn) btn.classList.add('settings-active');
+  };
+
+  // ── Settings init ──────────────────────────────────────────────────────────
+
+  const initSettings = () => {
+    loadSettings();
+    applyFontSize(editorSettings.fontSize);
+    const btn = document.getElementById('settings-btn');
+    if (btn) btn.addEventListener('click', openSettingsModal);
+  };
+
   // ── Boot ───────────────────────────────────────────────────────────────────
 
   const boot = () => {
@@ -1637,6 +1913,7 @@
     attachPopoverBehavior();
     attachMessageHandler();
     patchListContentEditable();
+    initSettings();
 
     if (!initEditorJs()) {
       setTimeout(() => { if (!initEditorJs()) console.error('[BlockEditor] EditorJS failed to load'); }, 500);

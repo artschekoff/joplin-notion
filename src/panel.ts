@@ -1,4 +1,20 @@
 import joplin from 'api';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+
+const MSG = {
+	GET_NOTE: 'getNote',
+	SAVE_BLOCKS: 'saveBlocks',
+	SAVE_TITLE: 'saveTitle',
+	ASK_AI: 'askAI',
+	INSERT_RESOURCE: 'insertResource',
+	NOTE_LOADED: 'noteLoaded',
+	ERROR: 'error',
+	RESOURCE_INSERTED: 'resourceInserted',
+	RESOURCE_INSERT_ERROR: 'resourceInsertError',
+	ASK_AI_ERROR: 'askAIError',
+} as const;
 
 let panelHandle: string | null = null;
 let panelVisible = false;
@@ -29,6 +45,12 @@ const PANEL_HTML = `<!DOCTYPE html>
 			<span id="vim-mode-label">INSERT</span>
 		</div>
 	</div>
+	<button id="settings-btn" title="Editor settings" aria-label="Editor settings">
+		<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+			<circle cx="12" cy="12" r="3"/>
+			<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+		</svg>
+	</button>
 	<button id="toc-toggle-btn" title="Toggle outline" aria-label="Toggle outline">
 		<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 			<line x1="3" y1="6" x2="21" y2="6"/>
@@ -51,10 +73,35 @@ const sendNoteLoaded = async () => {
 	const note = await getCurrentNote();
 	if (!note) return;
 	await joplin.views.panels.postMessage(panelHandle, {
-		type: 'noteLoaded',
+		type: MSG.NOTE_LOADED,
 		note: { id: note.id, title: note.title, body: note.body },
 	});
 };
+
+export async function handleInsertResource(
+	dataBase64: string,
+	filename: string,
+	mimeType: string,
+): Promise<{ resourceId: string; title: string; mimeType: string }> {
+	const buffer = Buffer.from(dataBase64, 'base64');
+	const safeName = path.basename(filename);
+	const tmpPath = path.join(os.tmpdir(), `joplin-plugin-res-${Date.now()}-${safeName}`);
+	try {
+		fs.writeFileSync(tmpPath, buffer);
+		const result = await joplin.data.post(['resources'], null, { title: safeName }, [
+			{ path: tmpPath },
+		]);
+		return {
+			resourceId: result.id as string,
+			title: (result.title as string) || safeName,
+			mimeType: (result.mime as string) || mimeType,
+		};
+	} finally {
+		try {
+			fs.unlinkSync(tmpPath);
+		} catch (_) {}
+	}
+}
 
 export const initPanel = async (): Promise<void> => {
 	panelVisible = false;
@@ -78,12 +125,12 @@ export const initPanel = async (): Promise<void> => {
 	await joplin.views.panels.onMessage(panelHandle, async (message: any) => {
 		if (!panelHandle) return;
 
-		if (message.type === 'getNote') {
+		if (message.type === MSG.GET_NOTE) {
 			await sendNoteLoaded();
 			return;
 		}
 
-		if (message.type === 'saveBlocks') {
+		if (message.type === MSG.SAVE_BLOCKS) {
 			const { noteId, markdown } = message as { noteId: unknown; markdown: unknown };
 			if (typeof noteId === 'string' && noteId && typeof markdown === 'string') {
 				isSavingFromPanel = true;
@@ -95,7 +142,7 @@ export const initPanel = async (): Promise<void> => {
 					console.error('saveBlocks failed:', errMsg);
 					if (panelHandle) {
 						await joplin.views.panels.postMessage(panelHandle, {
-							type: 'error',
+							type: MSG.ERROR,
 							message: 'Failed to save note. Please try again.',
 						});
 					}
@@ -109,7 +156,7 @@ export const initPanel = async (): Promise<void> => {
 			return;
 		}
 
-		if (message.type === 'saveTitle') {
+		if (message.type === MSG.SAVE_TITLE) {
 			const { noteId, title } = message as { noteId: unknown; title: unknown };
 			if (typeof noteId === 'string' && noteId && typeof title === 'string') {
 				try {
@@ -122,7 +169,7 @@ export const initPanel = async (): Promise<void> => {
 			return;
 		}
 
-		if (message.type === 'askAI') {
+		if (message.type === MSG.ASK_AI) {
 			const text = typeof message.text === 'string' ? message.text : '';
 			const prompt = typeof message.prompt === 'string' ? message.prompt : '';
 			const isSelection = message.isSelection === true;
@@ -140,6 +187,36 @@ export const initPanel = async (): Promise<void> => {
 				console.log('[notion-panel] notion.askAI.request written OK');
 			} catch (err) {
 				console.error('askAI bridge write failed:', err);
+			}
+			return;
+		}
+
+		if (message.type === MSG.INSERT_RESOURCE) {
+			const { uploadId, dataBase64, filename, mimeType } = message as {
+				uploadId: number;
+				dataBase64: string;
+				filename: string;
+				mimeType: string;
+			};
+			try {
+				const result = await handleInsertResource(dataBase64, filename, mimeType);
+				if (panelHandle) {
+					await joplin.views.panels.postMessage(panelHandle, {
+						type: MSG.RESOURCE_INSERTED,
+						uploadId,
+						resourceId: result.resourceId,
+						title: result.title,
+						mimeType: result.mimeType,
+					});
+				}
+			} catch (err) {
+				if (panelHandle) {
+					await joplin.views.panels.postMessage(panelHandle, {
+						type: MSG.RESOURCE_INSERT_ERROR,
+						uploadId,
+						message: err instanceof Error ? err.message : String(err),
+					});
+				}
 			}
 			return;
 		}
@@ -173,7 +250,7 @@ export const initPanel = async (): Promise<void> => {
 			if (parsed.ts <= lastProcessedErrorTs) return;
 			lastProcessedErrorTs = parsed.ts;
 			await joplin.views.panels.postMessage(panelHandle, {
-				type: 'askAIError',
+				type: MSG.ASK_AI_ERROR,
 				message: parsed.message,
 			});
 		} catch {
