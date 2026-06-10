@@ -425,6 +425,12 @@ body.vim-block-visual .ce-inline-toolbar {
 	border-color: var(--border-focus);
 }
 
+#settings-btn.settings-active {
+	background: rgba(74, 144, 217, 0.15);
+	color: var(--border-focus);
+	border-color: var(--border-focus);
+}
+
 /* ── Settings modal ─────────────────────────────────────────────────────────── */
 
 .be-settings-overlay {
