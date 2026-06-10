@@ -3,8 +3,8 @@ import * as path from 'path';
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const editorSrc = fs.readFileSync(path.join(ROOT, 'src', 'webview', 'block-editor.js'), 'utf-8');
-const cssSrc    = fs.readFileSync(path.join(ROOT, 'src', 'webview', 'panel.css'), 'utf-8');
-const panelSrc  = fs.readFileSync(path.join(ROOT, 'src', 'panel.ts'), 'utf-8');
+const cssSrc = fs.readFileSync(path.join(ROOT, 'src', 'webview', 'panel.css'), 'utf-8');
+const panelSrc = fs.readFileSync(path.join(ROOT, 'src', 'panel.ts'), 'utf-8');
 
 describe('block editor settings', () => {
 	it('defines SETTINGS_STORAGE_KEY constant', () => {
