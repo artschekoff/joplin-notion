@@ -70,6 +70,8 @@
   let vimSearchQuery = '';      // accumulated query characters
   let vimMatches = [];          // block indices matching the current query
   let vimMatchCursor = 0;       // index into vimMatches pointing to focused match
+  /** After confirming search, stores { node, idx, len, ce } so i/c/d act on the match. */
+  let vimSearchPendingMatch = null;
 
   // ── Undo stack ─────────────────────────────────────────────────────────────
 
@@ -344,6 +346,7 @@
     vimSearchQuery = '';
     vimMatches = [];
     vimMatchCursor = 0;
+    vimSearchPendingMatch = null;
     updateVimUI();
   };
 
@@ -371,8 +374,8 @@
         const ce = m.node.parentElement && m.node.parentElement.closest('[contenteditable="true"]');
         if (ce) {
           vimMode = VIM.BLOCK;
-          // Defer focus+selection until after EditorJS settles, then focus first so
-          // addRange isn't wiped by the focus event, then select the full match text.
+          vimSearchPendingMatch = { node: m.node, idx: m.idx, len: m.len, ce };
+          // Focus first, then select the full match word so it's visually highlighted.
           setTimeout(() => {
             try {
               ce.focus();
@@ -397,6 +400,7 @@
     vimSearchQuery = '';
     vimMatches = [];
     vimMatchCursor = 0;
+    vimSearchPendingMatch = null;
     document.querySelectorAll('.ce-block--vim-search-match').forEach(b => b.classList.remove('ce-block--vim-search-match'));
     if (_cssh) _cssh.delete('vim-search');
     updateVimUI();
@@ -722,6 +726,7 @@
           container.focus();
           vimMode = VIM.NORMAL;
           vimBlockVisual = false;
+          vimSearchPendingMatch = null;
           updateVimUI();
           e.preventDefault();
           e.stopImmediatePropagation();
@@ -757,6 +762,47 @@
 
         const move = (dir, gran) => sel?.modify('move', dir, gran);
         const visualMove = (dir, gran) => vimBlockVisual ? vimVisualMove(dir, gran) : move(dir, gran);
+
+        // ── Post-search: i/c/d/y act on the confirmed match word ─────────────
+        if (vimSearchPendingMatch && (key === 'i' || key === 'c' || key === 'd' || key === 'y')) {
+          const pm = vimSearchPendingMatch;
+          vimSearchPendingMatch = null;
+          if (key === 'i') {
+            // Place caret at match start, enter insert mode
+            vimMode = VIM.INSERT;
+            updateVimUI();
+            setTimeout(() => {
+              try {
+                pm.ce.focus();
+                const s = window.getSelection();
+                if (s) { s.removeAllRanges(); const r = document.createRange(); r.setStart(pm.node, pm.idx); r.setEnd(pm.node, pm.idx); s.addRange(r); }
+              } catch (_) {}
+            }, 0);
+            return;
+          }
+          if (key === 'c' || key === 'd') {
+            // Delete match text; c also enters insert mode
+            try {
+              const r = document.createRange();
+              r.setStart(pm.node, pm.idx);
+              r.setEnd(pm.node, pm.idx + pm.len);
+              if (!r.collapsed) { r.deleteContents(); scheduleSave(); }
+            } catch (_) {}
+            if (key === 'c') { vimMode = VIM.INSERT; updateVimUI(); }
+            return;
+          }
+          if (key === 'y') {
+            // Yank match text to clipboard
+            try {
+              const r = document.createRange();
+              r.setStart(pm.node, pm.idx);
+              r.setEnd(pm.node, pm.idx + pm.len);
+              const text = r.toString();
+              if (text) navigator.clipboard?.writeText(text).catch(() => {});
+            } catch (_) {}
+            return;
+          }
+        }
 
         // Find the contenteditable that owns the cursor
         const curCE = () =>
