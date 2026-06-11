@@ -40,4 +40,35 @@ describe('block editor settings', () => {
 	it('panel HTML contains settings-btn', () => {
 		expect(panelSrc).toContain('settings-btn');
 	});
+
+	it('defines FONT_FAMILY_OPTIONS array', () => {
+		expect(editorSrc).toContain('FONT_FAMILY_OPTIONS');
+	});
+
+	it('defines FONT_FAMILY_DEFAULT constant', () => {
+		expect(editorSrc).toContain('FONT_FAMILY_DEFAULT');
+	});
+
+	it('applyFontFamily sets --editor-font-family CSS variable', () => {
+		expect(editorSrc).toContain('--editor-font-family');
+		expect(editorSrc).toContain('applyFontFamily');
+	});
+
+	it('settings load/save handles fontFamily field', () => {
+		expect(editorSrc).toContain('fontFamily');
+		expect(editorSrc).toContain('FONT_FAMILY_OPTIONS');
+	});
+
+	it('CSS defines --editor-font-family custom property', () => {
+		expect(cssSrc).toContain('--editor-font-family');
+	});
+
+	it('filterable font dropdown renders each option in its own font', () => {
+		expect(editorSrc).toContain('be-font-family-option');
+		expect(editorSrc).toContain('fontFamily');
+	});
+
+	it('font dropdown filter input narrows visible options', () => {
+		expect(editorSrc).toContain('be-font-filter');
+	});
 });
