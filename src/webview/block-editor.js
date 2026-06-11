@@ -66,6 +66,10 @@
   /** Pending operator in block mode (e.g. 'd' waiting for a motion). */
   let vimBlockPending = null;
   let vimBlockPendingTimer = null;
+  let vimSearchMode = false;   // true while user is typing a search query
+  let vimSearchQuery = '';      // accumulated query characters
+  let vimMatches = [];          // block indices matching the current query
+  let vimMatchCursor = 0;       // index into vimMatches pointing to focused match
 
   // ── Undo stack ─────────────────────────────────────────────────────────────
 
@@ -253,17 +257,15 @@
   const updateVimUI = () => {
     const el = vimStatusEl();
     if (el) {
-      if (vimMode === VIM.NORMAL) el.textContent = '-- NORMAL --';
+      if (vimSearchMode) el.textContent = '/' + vimSearchQuery;
+      else if (vimMode === VIM.NORMAL) el.textContent = '-- NORMAL --';
       else if (vimMode === VIM.BLOCK && vimBlockVisual) el.textContent = '-- VISUAL --';
       else if (vimMode === VIM.BLOCK) el.textContent = '-- BLOCK --';
       else el.textContent = '-- INSERT --';
     }
     const bar = document.getElementById('vim-statusbar');
-    if (bar) bar.setAttribute('data-mode', vimMode === VIM.BLOCK && vimBlockVisual ? VIM.VISUAL : vimMode);
-    // Suppress the EditorJS inline toolbar while in visual mode so it can't steal focus.
+    if (bar) bar.setAttribute('data-mode', vimSearchMode ? 'search' : (vimMode === VIM.BLOCK && vimBlockVisual ? VIM.VISUAL : vimMode));
     document.body.classList.toggle('vim-block-visual', vimMode === VIM.BLOCK && vimBlockVisual);
-
-    // Block highlight in both 'block' and 'normal' modes
     document.querySelectorAll('.ce-block--vim').forEach(b => b.classList.remove('ce-block--vim'));
     if (vimMode === VIM.NORMAL || vimMode === VIM.BLOCK) {
       const blocks = document.querySelectorAll('#editor-container .ce-block');
@@ -287,6 +289,86 @@
     vimMode = VIM.INSERT;
     updateVimUI();
     try { editor.caret.setToBlock(vimIndex, position); } catch (_) {}
+  };
+
+  // ── Vim search ────────────────────────────────────────────────────────────────
+
+  const findVimMatches = (query) => {
+    if (!query) return [];
+    const lq = query.toLowerCase();
+    const blocks = Array.from(document.querySelectorAll('#editor-container .ce-block'));
+    return blocks.reduce((acc, block, i) => {
+      if (block.textContent.toLowerCase().includes(lq)) acc.push(i);
+      return acc;
+    }, []);
+  };
+
+  const applyVimSearchHighlights = () => {
+    document.querySelectorAll('#editor-container .ce-block').forEach((block, i) => {
+      block.classList.toggle('ce-block--vim-search-match', vimMatches.includes(i));
+    });
+  };
+
+  const enterVimSearch = () => {
+    vimSearchMode = true;
+    vimSearchQuery = '';
+    vimMatches = [];
+    vimMatchCursor = 0;
+    updateVimUI();
+  };
+
+  const updateVimSearch = () => {
+    vimMatches = findVimMatches(vimSearchQuery);
+    vimMatchCursor = 0;
+    applyVimSearchHighlights();
+    updateVimUI();
+  };
+
+  const confirmVimSearch = () => {
+    vimSearchMode = false;
+    if (vimMatches.length > 0) {
+      vimMoveTo(vimMatches[vimMatchCursor]);
+    }
+    updateVimUI();
+  };
+
+  const clearVimSearch = () => {
+    vimSearchMode = false;
+    vimSearchQuery = '';
+    vimMatches = [];
+    vimMatchCursor = 0;
+    document.querySelectorAll('.ce-block--vim-search-match').forEach(b => b.classList.remove('ce-block--vim-search-match'));
+    updateVimUI();
+  };
+
+  const handleVimSearch = (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      clearVimSearch();
+      return true;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      confirmVimSearch();
+      return true;
+    }
+    if (e.key === 'Backspace') {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      vimSearchQuery = vimSearchQuery.slice(0, -1);
+      updateVimSearch();
+      return true;
+    }
+    if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      vimSearchQuery += e.key;
+      updateVimSearch();
+      return true;
+    }
+    return false;
   };
 
   // ── Visual selection helpers ────────────────────────────────────────────────
@@ -408,6 +490,7 @@
   /** @returns {boolean} true if key was consumed */
   const handleVimKey = async (e) => {
     if (vimMode !== VIM.NORMAL) return false;
+    if (vimSearchMode) return handleVimSearch(e);
 
     const key = getVimKey(e);
     const prev = vimPendingKey;
@@ -508,6 +591,27 @@
         e.preventDefault();
         vimPendingKey = key;
         vimPendingTimer = setTimeout(cancelPending, VIM_PENDING_MS);
+        return true;
+
+      case '/':
+        e.preventDefault();
+        enterVimSearch();
+        return true;
+
+      case 'n':
+        e.preventDefault();
+        if (vimMatches.length > 0) {
+          vimMatchCursor = (vimMatchCursor + 1) % vimMatches.length;
+          vimMoveTo(vimMatches[vimMatchCursor]);
+        }
+        return true;
+
+      case 'N':
+        e.preventDefault();
+        if (vimMatches.length > 0) {
+          vimMatchCursor = (vimMatchCursor - 1 + vimMatches.length) % vimMatches.length;
+          vimMoveTo(vimMatches[vimMatchCursor]);
+        }
         return true;
 
       default:
