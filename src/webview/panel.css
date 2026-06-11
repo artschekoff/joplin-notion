@@ -636,3 +636,15 @@ body.vim-block-visual .ce-inline-toolbar {
 .be-font-family-option.hidden {
 	display: none;
 }
+
+/* ── Vim search ──────────────────────────────────────────────────────────────── */
+
+#vim-statusbar[data-mode='search'] {
+	background: var(--bg-primary);
+	color: var(--text-primary);
+	border-top-color: var(--border-color);
+}
+
+#editor-container .ce-block--vim-search-match {
+	background: rgba(250, 204, 21, 0.15);
+}
