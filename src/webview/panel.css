@@ -398,6 +398,39 @@ body.vim-block-visual .ce-inline-toolbar {
 	color: var(--border-focus);
 }
 
+/* ── Hide-editor button ─────────────────────────────────────────────────────── */
+
+#hide-editor-btn {
+	position: fixed;
+	top: 6px;
+	right: 70px;
+	z-index: 2147483647;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 26px;
+	height: 26px;
+	border: 1px solid var(--border-color);
+	border-radius: 5px;
+	background: var(--bg-secondary);
+	color: var(--text-secondary);
+	cursor: pointer;
+	padding: 0;
+	transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+#hide-editor-btn:hover {
+	background: var(--border-color);
+	color: var(--text-primary);
+	border-color: var(--border-focus);
+}
+
+#hide-editor-btn.active {
+	background: rgba(74, 144, 217, 0.15);
+	color: var(--border-focus);
+	border-color: var(--border-focus);
+}
+
 /* ── Settings button ────────────────────────────────────────────────────────── */
 
 #settings-btn {

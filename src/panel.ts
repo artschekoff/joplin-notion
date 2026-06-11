@@ -14,11 +14,15 @@ const MSG = {
 	RESOURCE_INSERTED: 'resourceInserted',
 	RESOURCE_INSERT_ERROR: 'resourceInsertError',
 	ASK_AI_ERROR: 'askAIError',
+	TOGGLE_MAIN_EDITOR: 'toggleMainEditor',
+	MAIN_EDITOR_STATE_CHANGED: 'mainEditorStateChanged',
 } as const;
 
 let panelHandle: string | null = null;
 let panelVisible = false;
 let lastProcessedErrorTs = Date.now();
+let mainEditorHidden = false;
+let savedPanes: string[] | null = null;
 
 // Joplin stores plugin settings under plugin-${pluginId}.${key} internally.
 // globalValue() reads keys as-is (no prefix), so we must pass the full key.
@@ -56,6 +60,12 @@ const PANEL_HTML = `<!DOCTYPE html>
 			<line x1="3" y1="6" x2="21" y2="6"/>
 			<line x1="3" y1="12" x2="15" y2="12"/>
 			<line x1="3" y1="18" x2="18" y2="18"/>
+		</svg>
+	</button>
+	<button id="hide-editor-btn" title="Toggle main editor" aria-label="Toggle main editor">
+		<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+			<rect x="3" y="3" width="7" height="18" rx="1"/>
+			<rect x="14" y="3" width="7" height="18" rx="1"/>
 		</svg>
 	</button>
 </body>
@@ -102,6 +112,57 @@ export async function handleInsertResource(
 		} catch (_) {}
 	}
 }
+
+const PANE_CYCLE = [['editor', 'viewer'], ['editor'], ['viewer']] as const;
+
+const callsToReach = (from: string[], to: string[]): number => {
+	const fromKey = from.join(',');
+	const toKey = to.join(',');
+	for (let steps = 0; steps < PANE_CYCLE.length; steps++) {
+		const idx = PANE_CYCLE.findIndex((p) => p.join(',') === fromKey);
+		if (idx === -1) break;
+		const target = PANE_CYCLE[(idx + steps) % PANE_CYCLE.length];
+		if (target.join(',') === toKey) return steps;
+	}
+	return 0;
+};
+
+const restoreMainEditor = async (): Promise<void> => {
+	if (!mainEditorHidden || !savedPanes) return;
+	const steps = callsToReach(['viewer'], savedPanes);
+	for (let i = 0; i < steps; i++) {
+		await joplin.commands.execute('toggleVisiblePanes');
+	}
+	mainEditorHidden = false;
+	savedPanes = null;
+	if (panelHandle) {
+		await joplin.views.panels.postMessage(panelHandle, {
+			type: MSG.MAIN_EDITOR_STATE_CHANGED,
+			hidden: false,
+		});
+	}
+};
+
+const toggleMainEditor = async (): Promise<void> => {
+	if (mainEditorHidden) {
+		await restoreMainEditor();
+		return;
+	}
+	const values = await joplin.settings.globalValues(['noteVisiblePanes']);
+	const current = Array.isArray(values[0]) ? (values[0] as string[]) : ['editor', 'viewer'];
+	savedPanes = [...current];
+	const steps = callsToReach(current, ['viewer']);
+	for (let i = 0; i < steps; i++) {
+		await joplin.commands.execute('toggleVisiblePanes');
+	}
+	mainEditorHidden = true;
+	if (panelHandle) {
+		await joplin.views.panels.postMessage(panelHandle, {
+			type: MSG.MAIN_EDITOR_STATE_CHANGED,
+			hidden: true,
+		});
+	}
+};
 
 export const initPanel = async (): Promise<void> => {
 	panelVisible = false;
@@ -191,6 +252,11 @@ export const initPanel = async (): Promise<void> => {
 			return;
 		}
 
+		if (message.type === MSG.TOGGLE_MAIN_EDITOR) {
+			await toggleMainEditor();
+			return;
+		}
+
 		if (message.type === MSG.INSERT_RESOURCE) {
 			const { uploadId, dataBase64, filename, mimeType } = message as {
 				uploadId: number;
@@ -266,6 +332,7 @@ export const toggleBlockEditorPane = async (): Promise<void> => {
 		await joplin.views.panels.show(panelHandle);
 		await sendNoteLoaded();
 	} else {
+		if (mainEditorHidden) await restoreMainEditor();
 		await joplin.views.panels.hide(panelHandle);
 	}
 	try {

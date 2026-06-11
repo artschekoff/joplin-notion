@@ -20,12 +20,14 @@
     SAVE_TITLE:            'saveTitle',
     ASK_AI:                'askAI',
     INSERT_RESOURCE:       'insertResource',
+    TOGGLE_MAIN_EDITOR:    'toggleMainEditor',
     // Received from panel.ts
     NOTE_LOADED:           'noteLoaded',
     ERROR:                 'error',
     RESOURCE_INSERTED:     'resourceInserted',
     RESOURCE_INSERT_ERROR: 'resourceInsertError',
     ASK_AI_ERROR:          'askAIError',
+    MAIN_EDITOR_STATE_CHANGED: 'mainEditorStateChanged',
   });
 
   const VIM = Object.freeze({ INSERT: 'insert', NORMAL: 'normal', BLOCK: 'block', VISUAL: 'visual' });
@@ -1654,6 +1656,10 @@
         document.body.appendChild(toast);
         setTimeout(() => toast.remove(), 4000);
       }
+      if (message.type === MSG.MAIN_EDITOR_STATE_CHANGED) {
+        const btn = document.getElementById('hide-editor-btn');
+        if (btn) btn.classList.toggle('active', !!message.hidden);
+      }
     });
   };
 
@@ -1905,6 +1911,16 @@
     if (btn) btn.addEventListener('click', openSettingsModal);
   };
 
+  // ── Hide-editor button ─────────────────────────────────────────────────────
+
+  const initHideEditorBtn = () => {
+    const btn = document.getElementById('hide-editor-btn');
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+      window.webviewApi.postMessage({ type: MSG.TOGGLE_MAIN_EDITOR });
+    });
+  };
+
   // ── Boot ───────────────────────────────────────────────────────────────────
 
   const boot = () => {
@@ -1914,6 +1930,7 @@
     attachMessageHandler();
     patchListContentEditable();
     initSettings();
+    initHideEditorBtn();
 
     if (!initEditorJs()) {
       setTimeout(() => { if (!initEditorJs()) console.error('[BlockEditor] EditorJS failed to load'); }, 500);
