@@ -1914,7 +1914,7 @@
     const overlay = document.createElement('div');
     overlay.id = 'be-settings-overlay';
     overlay.className = 'be-settings-overlay';
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) closeSettingsModal(); });
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) { closeFontDropdown(); closeSettingsModal(); } });
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
 
