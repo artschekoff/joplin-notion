@@ -11,6 +11,7 @@
 	--toc-bg-rgb: 243, 244, 246;
 	--toc-border-rgb: 107, 114, 128;
 	--editor-font-size: 14px;
+	--editor-font-family: system-ui, -apple-system, sans-serif;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -27,6 +28,13 @@
 		--toc-bg-rgb: 30, 30, 30;
 		--toc-border-rgb: 80, 80, 80;
 	}
+}
+
+#editor-container,
+.codex-editor,
+.ce-block,
+.ce-paragraph {
+	font-family: var(--editor-font-family);
 }
 
 * {
@@ -540,4 +548,91 @@ body.vim-block-visual .ce-inline-toolbar {
 .be-settings-select:focus {
 	outline: 2px solid var(--border-focus);
 	outline-offset: 1px;
+}
+
+/* ── Font-family filterable dropdown ────────────────────────────────────────── */
+
+.be-font-select {
+	position: relative;
+	flex: 1;
+	min-width: 0;
+}
+
+.be-font-trigger {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 6px;
+	background: var(--bg-secondary);
+	border: 1px solid var(--border-color);
+	border-radius: 4px;
+	padding: 3px 8px;
+	font-size: 13px;
+	cursor: pointer;
+	color: var(--text-primary);
+	width: 100%;
+	text-align: left;
+}
+
+.be-font-trigger:hover {
+	border-color: var(--border-focus);
+}
+
+.be-font-trigger .be-font-chevron {
+	font-size: 10px;
+	color: var(--text-secondary);
+	flex-shrink: 0;
+}
+
+.be-font-dropdown {
+	position: absolute;
+	top: calc(100% + 4px);
+	right: 0;
+	left: 0;
+	background: var(--bg-primary);
+	border: 1px solid var(--border-color);
+	border-radius: 6px;
+	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+	z-index: 2147483647;
+	overflow: hidden;
+	min-width: 180px;
+}
+
+.be-font-filter {
+	display: block;
+	width: 100%;
+	box-sizing: border-box;
+	border: none;
+	border-bottom: 1px solid var(--border-color);
+	background: var(--bg-secondary);
+	color: var(--text-primary);
+	padding: 6px 10px;
+	font-size: 12px;
+	outline: none;
+}
+
+.be-font-list {
+	max-height: 180px;
+	overflow-y: auto;
+	padding: 4px 0;
+}
+
+.be-font-family-option {
+	padding: 5px 10px;
+	font-size: 13px;
+	cursor: pointer;
+	color: var(--text-primary);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.be-font-family-option:hover,
+.be-font-family-option.selected {
+	background: var(--bg-secondary);
+	color: var(--border-focus);
+}
+
+.be-font-family-option.hidden {
+	display: none;
 }
