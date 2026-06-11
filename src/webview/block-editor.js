@@ -368,15 +368,25 @@
       vimMoveTo(bi);
       const m = findFirstMatchRange(bi, vimSearchQuery);
       if (m) {
-        try {
-          const range = document.createRange();
-          range.setStart(m.node, m.idx);
-          range.setEnd(m.node, m.idx);
-          const sel = window.getSelection();
-          if (sel) { sel.removeAllRanges(); sel.addRange(range); }
-          const ce = m.node.parentElement && m.node.parentElement.closest('[contenteditable="true"]');
-          if (ce) { ce.focus(); vimMode = VIM.BLOCK; }
-        } catch (_) {}
+        const ce = m.node.parentElement && m.node.parentElement.closest('[contenteditable="true"]');
+        if (ce) {
+          vimMode = VIM.BLOCK;
+          // Defer focus+selection until after EditorJS settles, then focus first so
+          // addRange isn't wiped by the focus event, then select the full match text.
+          setTimeout(() => {
+            try {
+              ce.focus();
+              const sel = window.getSelection();
+              if (sel) {
+                sel.removeAllRanges();
+                const r = document.createRange();
+                r.setStart(m.node, m.idx);
+                r.setEnd(m.node, m.idx + m.len);
+                sel.addRange(r);
+              }
+            } catch (_) {}
+          }, 0);
+        }
       }
     }
     updateVimUI();
