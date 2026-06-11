@@ -93,7 +93,22 @@
   const FONT_SIZE_OPTIONS = [11, 12, 13, 14, 15, 16, 18, 20];
   const FONT_SIZE_DEFAULT = 14;
 
-  let editorSettings = { fontSize: FONT_SIZE_DEFAULT };
+  const FONT_FAMILY_OPTIONS = [
+    { label: 'System Default', value: 'system-ui, -apple-system, sans-serif' },
+    { label: 'Arial',          value: 'Arial, sans-serif' },
+    { label: 'Georgia',        value: 'Georgia, serif' },
+    { label: 'Helvetica Neue', value: "'Helvetica Neue', Helvetica, sans-serif" },
+    { label: 'Segoe UI',       value: "'Segoe UI', sans-serif" },
+    { label: 'Trebuchet MS',   value: "'Trebuchet MS', sans-serif" },
+    { label: 'Verdana',        value: 'Verdana, sans-serif' },
+    { label: 'Times New Roman',value: "'Times New Roman', serif" },
+    { label: 'Courier New',    value: "'Courier New', monospace" },
+    { label: 'Consolas',       value: 'Consolas, monospace' },
+    { label: 'Menlo',          value: "Menlo, Monaco, monospace" },
+  ];
+  const FONT_FAMILY_DEFAULT = 'system-ui, -apple-system, sans-serif';
+
+  let editorSettings = { fontSize: FONT_SIZE_DEFAULT, fontFamily: FONT_FAMILY_DEFAULT };
   let _settingsEscHandler = null;
 
   const loadSettings = () => {
@@ -103,6 +118,9 @@
         const parsed = JSON.parse(raw);
         if (typeof parsed.fontSize === 'number' && FONT_SIZE_OPTIONS.includes(parsed.fontSize)) {
           editorSettings.fontSize = parsed.fontSize;
+        }
+        if (typeof parsed.fontFamily === 'string' && FONT_FAMILY_OPTIONS.some((f) => f.value === parsed.fontFamily)) {
+          editorSettings.fontFamily = parsed.fontFamily;
         }
       }
     } catch (_) {}
@@ -116,6 +134,10 @@
 
   const applyFontSize = (size) => {
     document.documentElement.style.setProperty('--editor-font-size', size + 'px');
+  };
+
+  const applyFontFamily = (value) => {
+    document.documentElement.style.setProperty('--editor-font-family', value);
   };
 
   // ── Save helpers ───────────────────────────────────────────────────────────
@@ -1907,6 +1929,7 @@
   const initSettings = () => {
     loadSettings();
     applyFontSize(editorSettings.fontSize);
+    applyFontFamily(editorSettings.fontFamily);
     const btn = document.getElementById('settings-btn');
     if (btn) btn.addEventListener('click', openSettingsModal);
   };
@@ -1915,8 +1938,9 @@
 
   const initHideEditorBtn = () => {
     const btn = document.getElementById('hide-editor-btn');
-    if (!btn) return;
+    if (!btn) { console.error('[block-editor] hide-editor-btn not found'); return; }
     btn.addEventListener('click', () => {
+      console.log('[block-editor] hide-editor-btn clicked, sending', MSG.TOGGLE_MAIN_EDITOR);
       window.webviewApi.postMessage({ type: MSG.TOGGLE_MAIN_EDITOR });
     });
   };
