@@ -1884,9 +1884,11 @@
   const openSettingsModal = () => {
     if (document.getElementById('be-settings-overlay')) { closeSettingsModal(); return; }
 
-    const optionsHtml = FONT_SIZE_OPTIONS
-      .map((s) => { return '<option value="' + s + '"' + (s === editorSettings.fontSize ? ' selected' : '') + '>' + s + 'px</option>'; })
+    const fontSizeOptionsHtml = FONT_SIZE_OPTIONS
+      .map((s) => '<option value="' + s + '"' + (s === editorSettings.fontSize ? ' selected' : '') + '>' + s + 'px</option>')
       .join('');
+
+    const currentFont = FONT_FAMILY_OPTIONS.find((f) => f.value === editorSettings.fontFamily) || FONT_FAMILY_OPTIONS[0];
 
     const modal = document.createElement('div');
     modal.className = 'be-settings-modal';
@@ -1897,7 +1899,16 @@
       '</div>' +
       '<div class="be-settings-row">' +
         '<label class="be-settings-label" for="be-font-size-select">Font size</label>' +
-        '<select id="be-font-size-select" class="be-settings-select">' + optionsHtml + '</select>' +
+        '<select id="be-font-size-select" class="be-settings-select">' + fontSizeOptionsHtml + '</select>' +
+      '</div>' +
+      '<div class="be-settings-row">' +
+        '<label class="be-settings-label">Font family</label>' +
+        '<div class="be-font-select" id="be-font-select-wrap">' +
+          '<button type="button" class="be-font-trigger" id="be-font-trigger" aria-haspopup="listbox">' +
+            '<span id="be-font-trigger-label" style="font-family:' + currentFont.value + '">' + currentFont.label + '</span>' +
+            '<span class="be-font-chevron">▾</span>' +
+          '</button>' +
+        '</div>' +
       '</div>';
 
     const overlay = document.createElement('div');
@@ -1909,6 +1920,7 @@
 
     modal.querySelector('.be-settings-close').addEventListener('click', closeSettingsModal);
 
+    // Font size change handler
     document.getElementById('be-font-size-select').addEventListener('change', (e) => {
       const size = parseInt(e.target.value, 10);
       if (!FONT_SIZE_OPTIONS.includes(size)) return;
@@ -1917,7 +1929,65 @@
       saveSettings();
     });
 
-    _settingsEscHandler = (e) => { if (e.key === 'Escape') closeSettingsModal(); };
+    // Build and attach font family dropdown
+    const wrap = document.getElementById('be-font-select-wrap');
+    const trigger = document.getElementById('be-font-trigger');
+    let dropdownEl = null;
+
+    const buildFontOptionHtml = (f) =>
+      '<div class="be-font-family-option' + (f.value === editorSettings.fontFamily ? ' selected' : '') +
+      '" data-value="' + f.value.replace(/"/g, '&quot;') + '" style="font-family:' + f.value + '">' + f.label + '</div>';
+
+    const openFontDropdown = () => {
+      if (dropdownEl) return;
+      dropdownEl = document.createElement('div');
+      dropdownEl.className = 'be-font-dropdown';
+      dropdownEl.innerHTML =
+        '<input type="text" class="be-font-filter" id="be-font-filter" placeholder="Search…" autocomplete="off">' +
+        '<div class="be-font-list" id="be-font-list">' +
+          FONT_FAMILY_OPTIONS.map(buildFontOptionHtml).join('') +
+        '</div>';
+      wrap.appendChild(dropdownEl);
+      document.getElementById('be-font-filter').focus();
+
+      document.getElementById('be-font-filter').addEventListener('input', (e) => {
+        const q = e.target.value.toLowerCase();
+        dropdownEl.querySelectorAll('.be-font-family-option').forEach((el) => {
+          el.classList.toggle('hidden', !el.textContent.toLowerCase().includes(q));
+        });
+      });
+
+      dropdownEl.querySelectorAll('.be-font-family-option').forEach((el) => {
+        el.addEventListener('click', () => {
+          const val = el.getAttribute('data-value');
+          editorSettings.fontFamily = val;
+          applyFontFamily(val);
+          saveSettings();
+          const triggerLabel = document.getElementById('be-font-trigger-label');
+          if (triggerLabel) { triggerLabel.textContent = el.textContent; triggerLabel.style.fontFamily = val; }
+          dropdownEl.querySelectorAll('.be-font-family-option').forEach((o) => o.classList.remove('selected'));
+          el.classList.add('selected');
+          closeFontDropdown();
+        });
+      });
+    };
+
+    const closeFontDropdown = () => {
+      if (dropdownEl) { dropdownEl.remove(); dropdownEl = null; }
+    };
+
+    trigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (dropdownEl) { closeFontDropdown(); } else { openFontDropdown(); }
+    });
+
+    modal.addEventListener('click', (e) => {
+      if (!wrap.contains(e.target)) closeFontDropdown();
+    });
+
+    _settingsEscHandler = (e) => {
+      if (e.key === 'Escape') { if (dropdownEl) { closeFontDropdown(); } else { closeSettingsModal(); } }
+    };
     document.addEventListener('keydown', _settingsEscHandler, true);
 
     const btn = document.getElementById('settings-btn');
