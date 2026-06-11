@@ -55,4 +55,16 @@ describe('vim search', () => {
 	it('CSS defines vim search match highlight', () => {
 		expect(cssSrc).toContain('ce-block--vim-search-match');
 	});
+
+	it('defines findFirstMatchRange function', () => {
+		expect(editorSrc).toContain('findFirstMatchRange');
+	});
+
+	it('defines highlightVimSearchText function', () => {
+		expect(editorSrc).toContain('highlightVimSearchText');
+	});
+
+	it('CSS defines ::highlight(vim-search) rule', () => {
+		expect(cssSrc).toContain('::highlight(vim-search)');
+	});
 });

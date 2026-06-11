@@ -309,6 +309,36 @@
     });
   };
 
+  const findFirstMatchRange = (blockIndex, query) => {
+    if (!query) return null;
+    const blocks = Array.from(document.querySelectorAll('#editor-container .ce-block'));
+    const block = blocks[blockIndex];
+    if (!block) return null;
+    const lq = query.toLowerCase();
+    const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT, null);
+    let node;
+    while ((node = walker.nextNode())) {
+      const idx = node.textContent.toLowerCase().indexOf(lq);
+      if (idx !== -1) return { node, idx, len: query.length };
+    }
+    return null;
+  };
+
+  const highlightVimSearchText = (blockIndex) => {
+    if (!_cssh) return;
+    const m = findFirstMatchRange(blockIndex, vimSearchQuery);
+    if (m) {
+      try {
+        const r = new Range();
+        r.setStart(m.node, m.idx);
+        r.setEnd(m.node, m.idx + m.len);
+        _cssh.set('vim-search', new Highlight(r));
+      } catch (_) {}
+    } else {
+      _cssh.delete('vim-search');
+    }
+  };
+
   const enterVimSearch = () => {
     vimSearchMode = true;
     vimSearchQuery = '';
@@ -321,13 +351,33 @@
     vimMatches = findVimMatches(vimSearchQuery);
     vimMatchCursor = 0;
     applyVimSearchHighlights();
+    if (vimMatches.length > 0) {
+      vimMoveTo(vimMatches[0]);
+      highlightVimSearchText(vimMatches[0]);
+    } else {
+      if (_cssh) _cssh.delete('vim-search');
+    }
     updateVimUI();
   };
 
   const confirmVimSearch = () => {
     vimSearchMode = false;
+    if (_cssh) _cssh.delete('vim-search');
     if (vimMatches.length > 0) {
-      vimMoveTo(vimMatches[vimMatchCursor]);
+      const bi = vimMatches[vimMatchCursor];
+      vimMoveTo(bi);
+      const m = findFirstMatchRange(bi, vimSearchQuery);
+      if (m) {
+        try {
+          const range = document.createRange();
+          range.setStart(m.node, m.idx);
+          range.setEnd(m.node, m.idx);
+          const sel = window.getSelection();
+          if (sel) { sel.removeAllRanges(); sel.addRange(range); }
+          const ce = m.node.parentElement && m.node.parentElement.closest('[contenteditable="true"]');
+          if (ce) { ce.focus(); vimMode = VIM.BLOCK; }
+        } catch (_) {}
+      }
     }
     updateVimUI();
   };
@@ -338,6 +388,7 @@
     vimMatches = [];
     vimMatchCursor = 0;
     document.querySelectorAll('.ce-block--vim-search-match').forEach(b => b.classList.remove('ce-block--vim-search-match'));
+    if (_cssh) _cssh.delete('vim-search');
     updateVimUI();
   };
 
@@ -603,6 +654,7 @@
         if (vimMatches.length > 0) {
           vimMatchCursor = (vimMatchCursor + 1) % vimMatches.length;
           vimMoveTo(vimMatches[vimMatchCursor]);
+          highlightVimSearchText(vimMatches[vimMatchCursor]);
         }
         return true;
 
@@ -611,6 +663,7 @@
         if (vimMatches.length > 0) {
           vimMatchCursor = (vimMatchCursor - 1 + vimMatches.length) % vimMatches.length;
           vimMoveTo(vimMatches[vimMatchCursor]);
+          highlightVimSearchText(vimMatches[vimMatchCursor]);
         }
         return true;
 
