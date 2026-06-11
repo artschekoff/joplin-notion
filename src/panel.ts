@@ -144,23 +144,39 @@ const restoreMainEditor = async (): Promise<void> => {
 };
 
 const toggleMainEditor = async (): Promise<void> => {
+	console.log('[notion-panel] toggleMainEditor called, mainEditorHidden:', mainEditorHidden);
 	if (mainEditorHidden) {
 		await restoreMainEditor();
 		return;
 	}
-	const values = await joplin.settings.globalValues(['noteVisiblePanes']);
-	const current = Array.isArray(values[0]) ? (values[0] as string[]) : ['editor', 'viewer'];
-	savedPanes = [...current];
-	const steps = callsToReach(current, ['viewer']);
-	for (let i = 0; i < steps; i++) {
-		await joplin.commands.execute('toggleVisiblePanes');
-	}
-	mainEditorHidden = true;
-	if (panelHandle) {
-		await joplin.views.panels.postMessage(panelHandle, {
-			type: MSG.MAIN_EDITOR_STATE_CHANGED,
-			hidden: true,
-		});
+	try {
+		const values = await joplin.settings.globalValues(['noteVisiblePanes']);
+		console.log('[notion-panel] noteVisiblePanes raw:', JSON.stringify(values));
+		const current = Array.isArray(values[0]) ? (values[0] as string[]) : ['editor', 'viewer'];
+		console.log(
+			'[notion-panel] current panes:',
+			current,
+			'steps to viewer:',
+			callsToReach(current, ['viewer']),
+		);
+		savedPanes = [...current];
+		const steps = callsToReach(current, ['viewer']);
+		for (let i = 0; i < steps; i++) {
+			console.log('[notion-panel] calling toggleVisiblePanes step', i + 1, 'of', steps);
+			await joplin.commands.execute('toggleVisiblePanes');
+		}
+		mainEditorHidden = true;
+		if (panelHandle) {
+			await joplin.views.panels.postMessage(panelHandle, {
+				type: MSG.MAIN_EDITOR_STATE_CHANGED,
+				hidden: true,
+			});
+		}
+	} catch (err) {
+		console.error(
+			'[notion-panel] toggleMainEditor error:',
+			err instanceof Error ? err.message : String(err),
+		);
 	}
 };
 
