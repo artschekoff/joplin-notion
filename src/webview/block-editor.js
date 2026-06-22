@@ -310,6 +310,7 @@
   };
 
   const enterVimSearch = () => {
+    if (_cssh) _cssh.delete('vim-search');
     vimSearchMode = true;
     vimSearchQuery = '';
     vimMatches = [];
@@ -326,8 +327,11 @@
 
   const confirmVimSearch = () => {
     vimSearchMode = false;
+    document.querySelectorAll('.ce-block--vim-search-match').forEach(b => b.classList.remove('ce-block--vim-search-match'));
     if (vimMatches.length > 0) {
-      vimMoveTo(vimMatches[vimMatchCursor]);
+      const bi = vimMatches[vimMatchCursor];
+      vimMoveTo(bi);
+      _selectMatchInBlock(bi);
     }
     updateVimUI();
   };
@@ -337,8 +341,46 @@
     vimSearchQuery = '';
     vimMatches = [];
     vimMatchCursor = 0;
+    if (_cssh) _cssh.delete('vim-search');
     document.querySelectorAll('.ce-block--vim-search-match').forEach(b => b.classList.remove('ce-block--vim-search-match'));
     updateVimUI();
+  };
+
+  const findFirstMatchRange = (blockIndex, query) => {
+    if (!query) return null;
+    const blocks = document.querySelectorAll('#editor-container .ce-block');
+    const block = blocks[blockIndex];
+    if (!block) return null;
+    const lq = query.toLowerCase();
+    const w = document.createTreeWalker(block, NodeFilter.SHOW_TEXT, null);
+    let n;
+    while ((n = w.nextNode())) {
+      const idx = n.nodeValue.toLowerCase().indexOf(lq);
+      if (idx !== -1) return { node: n, idx, len: query.length };
+    }
+    return null;
+  };
+
+  const _selectMatchInBlock = (blockIndex) => {
+    const m = findFirstMatchRange(blockIndex, vimSearchQuery);
+    if (!m) return;
+    const ce = m.node.parentElement && m.node.parentElement.closest('[contenteditable="true"]');
+    if (!ce) return;
+    vimMode = VIM.BLOCK;
+    vimBlockVisual = false;
+    setTimeout(() => {
+      try {
+        ce.focus({ preventScroll: true });
+        const sel = window.getSelection();
+        if (sel) sel.collapse(m.node, m.idx);
+        if (_cssh) {
+          const r = new Range();
+          r.setStart(m.node, m.idx);
+          r.setEnd(m.node, m.idx + m.len);
+          _cssh.set('vim-search', new Highlight(r));
+        }
+      } catch (_) {}
+    }, 0);
   };
 
   const handleVimSearch = (e) => {
@@ -490,7 +532,6 @@
   /** @returns {boolean} true if key was consumed */
   const handleVimKey = async (e) => {
     if (vimMode !== VIM.NORMAL) return false;
-    if (vimSearchMode) return handleVimSearch(e);
 
     const key = getVimKey(e);
     const prev = vimPendingKey;
@@ -593,27 +634,6 @@
         vimPendingTimer = setTimeout(cancelPending, VIM_PENDING_MS);
         return true;
 
-      case '/':
-        e.preventDefault();
-        enterVimSearch();
-        return true;
-
-      case 'n':
-        e.preventDefault();
-        if (vimMatches.length > 0) {
-          vimMatchCursor = (vimMatchCursor + 1) % vimMatches.length;
-          vimMoveTo(vimMatches[vimMatchCursor]);
-        }
-        return true;
-
-      case 'N':
-        e.preventDefault();
-        if (vimMatches.length > 0) {
-          vimMatchCursor = (vimMatchCursor - 1 + vimMatches.length) % vimMatches.length;
-          vimMoveTo(vimMatches[vimMatchCursor]);
-        }
-        return true;
-
       default:
         return false;
     }
@@ -631,6 +651,12 @@
       if (!container.contains(e.target) && e.target !== container) return;
 
       if (e.key === 'Escape') {
+        if (vimSearchMode) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          clearVimSearch();
+          return;
+        }
         if (vimMode === VIM.INSERT) {
           // Esc from insert → block (keep contenteditable focused for in-block vim)
           try { vimIndex = editor.blocks.getCurrentBlockIndex(); } catch (_) {}
@@ -655,6 +681,7 @@
         }
         if (vimMode === VIM.BLOCK) {
           // Esc from block → normal navigation (leave the block)
+          if (_cssh) _cssh.delete('vim-search');
           if (document.activeElement) document.activeElement.blur();
           container.focus();
           vimMode = VIM.NORMAL;
@@ -680,6 +707,34 @@
           }
           return;
         }
+      }
+
+      // ── Unified search handler (works from NORMAL and BLOCK mode) ────────────
+      if (vimSearchMode) {
+        if (handleVimSearch(e)) return;
+      }
+      if (!e.ctrlKey && !e.metaKey && e.key === '/' &&
+          (vimMode === VIM.NORMAL || vimMode === VIM.BLOCK)) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        enterVimSearch();
+        return;
+      }
+      if (!e.ctrlKey && !e.metaKey && (e.key === 'n' || e.key === 'N') &&
+          vimMatches.length > 0 &&
+          (vimMode === VIM.NORMAL || vimMode === VIM.BLOCK)) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (e.key === 'n') {
+          vimMatchCursor = (vimMatchCursor + 1) % vimMatches.length;
+        } else {
+          vimMatchCursor = (vimMatchCursor - 1 + vimMatches.length) % vimMatches.length;
+        }
+        const bIdx = vimMatches[vimMatchCursor];
+        vimMoveTo(bIdx);
+        _selectMatchInBlock(bIdx);
+        updateVimUI();
+        return;
       }
 
       // Block mode: in-block vim navigation (contenteditable stays focused).

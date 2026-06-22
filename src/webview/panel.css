@@ -648,3 +648,8 @@ body.vim-block-visual .ce-inline-toolbar {
 #editor-container .ce-block--vim-search-match {
 	background: rgba(250, 204, 21, 0.15);
 }
+
+::highlight(vim-search) {
+	background-color: rgba(250, 204, 21, 0.55);
+	color: inherit;
+}

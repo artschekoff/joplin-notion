@@ -26,8 +26,8 @@ describe('vim search', () => {
 		expect(editorSrc).toContain('findVimMatches');
 	});
 
-	it('/ key in normal mode enters search mode', () => {
-		expect(editorSrc).toContain("case '/'");
+	it('/ key enters search mode from NORMAL and BLOCK', () => {
+		expect(editorSrc).toContain("e.key === '/'");
 		expect(editorSrc).toContain('enterVimSearch');
 	});
 
@@ -40,12 +40,12 @@ describe('vim search', () => {
 	});
 
 	it('n navigates to next match', () => {
-		expect(editorSrc).toContain("case 'n'");
+		expect(editorSrc).toContain("e.key === 'n'");
 		expect(editorSrc).toContain('vimMatchCursor');
 	});
 
 	it('N navigates to previous match', () => {
-		expect(editorSrc).toContain("case 'N'");
+		expect(editorSrc).toContain("e.key === 'N'");
 	});
 
 	it('CSS defines search mode statusbar style', () => {

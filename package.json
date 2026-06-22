@@ -50,7 +50,7 @@
   "overrides": {
     "tar": "^7.5.13",
     "glob": "^11.1.0",
-    "markdown-it": "^14.1.1"
+    "markdown-it": "^14.2.0"
   },
   "dependencies": {
     "@joplin/utils": "3.5.1",
